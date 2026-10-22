@@ -1,0 +1,65 @@
+{
+  "id": "chain",
+  "name": "Chain Reaction",
+  "theme": "meadow",
+  "tool": "ball",
+  "throws": 2,
+  "goal": {
+    "type": "toppleGems"
+  },
+  "medals": {
+    "bronze": 400,
+    "silver": 450,
+    "gold": 500
+  },
+  "blocks": [
+    {
+      "type": "bomb",
+      "pos": [-2.25, 0.5, 0]
+    },
+    {
+      "type": "normal",
+      "pos": [-2.25, 1.5, 0]
+    },
+    {
+      "type": "gem",
+      "pos": [-2.25, 2.5, 0]
+    },
+    {
+      "type": "bomb",
+      "pos": [-0.75, 0.5, 0]
+    },
+    {
+      "type": "normal",
+      "pos": [-0.75, 1.5, 0]
+    },
+    {
+      "type": "gem",
+      "pos": [-0.75, 2.5, 0]
+    },
+    {
+      "type": "bomb",
+      "pos": [0.75, 0.5, 0]
+    },
+    {
+      "type": "normal",
+      "pos": [0.75, 1.5, 0]
+    },
+    {
+      "type": "gem",
+      "pos": [0.75, 2.5, 0]
+    },
+    {
+      "type": "bomb",
+      "pos": [2.25, 0.5, 0]
+    },
+    {
+      "type": "normal",
+      "pos": [2.25, 1.5, 0]
+    },
+    {
+      "type": "gem",
+      "pos": [2.25, 2.5, 0]
+    }
+  ]
+}

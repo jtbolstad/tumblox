@@ -1,0 +1,73 @@
+{
+  "id": "gem-tower",
+  "name": "Gem Tower",
+  "theme": "meadow",
+  "tool": "ball",
+  "throws": 3,
+  "goal": {
+    "type": "toppleGems"
+  },
+  "medals": {
+    "bronze": 200,
+    "silver": 250,
+    "gold": 300
+  },
+  "blocks": [
+    {
+      "type": "normal",
+      "pos": [-0.5, 0.5, -0.5]
+    },
+    {
+      "type": "normal",
+      "pos": [-0.5, 0.5, 0.5]
+    },
+    {
+      "type": "normal",
+      "pos": [0.5, 0.5, -0.5]
+    },
+    {
+      "type": "normal",
+      "pos": [0.5, 0.5, 0.5]
+    },
+    {
+      "type": "normal",
+      "pos": [-0.5, 1.5, -0.5]
+    },
+    {
+      "type": "normal",
+      "pos": [-0.5, 1.5, 0.5]
+    },
+    {
+      "type": "normal",
+      "pos": [0.5, 1.5, -0.5]
+    },
+    {
+      "type": "normal",
+      "pos": [0.5, 1.5, 0.5]
+    },
+    {
+      "type": "normal",
+      "pos": [-0.5, 2.5, -0.5]
+    },
+    {
+      "type": "normal",
+      "pos": [-0.5, 2.5, 0.5]
+    },
+    {
+      "type": "normal",
+      "pos": [0.5, 2.5, -0.5]
+    },
+    {
+      "type": "normal",
+      "pos": [0.5, 2.5, 0.5]
+    },
+    {
+      "type": "gem",
+      "pos": [-0.5, 3.5, -0.5]
+    },
+    {
+      "type": "gem",
+      "pos": [0.5, 3.5, 0.5]
+    }
+  ]
+}

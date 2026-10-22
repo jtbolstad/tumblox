@@ -204,13 +204,14 @@ flowchart TD
 - [ ] Deploy to static hosting; test on a phone
 
 **Phase 1 — Vertical slice**
-- [ ] Level JSON schema + loader with validation (zod)
-- [ ] Block registry: normal, immobile, gem, point, bomb, vanish (data + behaviour hooks)
-- [ ] Collision event queue → behaviours; radial explosion impulse with chain delay
-- [ ] Settle detection and goal evaluation: topple gems, score target, clear board
-- [ ] Throws counter, score pop-ups, medal screen, retry / next
-- [ ] Level select with saved medals (localStorage)
-- [ ] 10 levels; Vitest tests for scoring and goal rules
+- [x] Level JSON schema + loader with validation (zod)
+- [x] Block registry: normal, immobile, gem, point, bomb, vanish (data + behaviour hooks)
+- [x] Collision event queue → behaviours; radial explosion impulse with chain delay
+- [x] Settle detection and goal evaluation: topple gems, score target, clear board
+- [x] Throws counter, medal screen, retry / next
+- [ ] Floating score pop-ups on fallen blocks (HUD score only so far)
+- [x] Level select with saved medals (localStorage)
+- [x] 10 levels; Vitest tests for scoring and goal rules
 
 **Phase 2 — Depth and juice**
 - [ ] Grab tool: raycast pick + spring to kinematic cursor anchor; Jenga goal type

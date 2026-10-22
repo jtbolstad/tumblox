@@ -1,0 +1,66 @@
+{
+  "id": "gold-towers",
+  "name": "Gold Towers",
+  "theme": "meadow",
+  "tool": "ball",
+  "throws": 3,
+  "goal": {
+    "type": "scoreTarget",
+    "target": 300
+  },
+  "medals": {
+    "bronze": 300,
+    "silver": 350,
+    "gold": 400
+  },
+  "blocks": [
+    {
+      "type": "normal",
+      "pos": [-2, 0.5, 0]
+    },
+    {
+      "type": "normal",
+      "pos": [-2, 1.5, 0]
+    },
+    {
+      "type": "normal",
+      "pos": [-2, 2.5, 0]
+    },
+    {
+      "type": "point",
+      "pos": [-2, 3.5, 0]
+    },
+    {
+      "type": "normal",
+      "pos": [0, 0.5, 0]
+    },
+    {
+      "type": "normal",
+      "pos": [0, 1.5, 0]
+    },
+    {
+      "type": "normal",
+      "pos": [0, 2.5, 0]
+    },
+    {
+      "type": "point",
+      "pos": [0, 3.5, 0]
+    },
+    {
+      "type": "normal",
+      "pos": [2, 0.5, 0]
+    },
+    {
+      "type": "normal",
+      "pos": [2, 1.5, 0]
+    },
+    {
+      "type": "normal",
+      "pos": [2, 2.5, 0]
+    },
+    {
+      "type": "point",
+      "pos": [2, 3.5, 0]
+    }
+  ]
+}

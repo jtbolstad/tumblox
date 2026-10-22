@@ -1,0 +1,46 @@
+{
+  "id": "bridge",
+  "name": "The Bridge",
+  "theme": "meadow",
+  "tool": "ball",
+  "throws": 3,
+  "goal": {
+    "type": "toppleGems"
+  },
+  "medals": {
+    "bronze": 200,
+    "silver": 250,
+    "gold": 300
+  },
+  "platform": {
+    "size": [4, 4],
+    "top": 1
+  },
+  "blocks": [
+    {
+      "type": "immobile",
+      "pos": [-1.5, 0.5, 0]
+    },
+    {
+      "type": "immobile",
+      "pos": [1.5, 0.5, 0]
+    },
+    {
+      "type": "normal",
+      "pos": [0, 1.5, 0],
+      "size": [5, 1, 1]
+    },
+    {
+      "type": "gem",
+      "pos": [-2.2, 2.5, 0]
+    },
+    {
+      "type": "gem",
+      "pos": [2.2, 2.5, 0]
+    },
+    {
+      "type": "bomb",
+      "pos": [0, 2.5, 0]
+    }
+  ]
+}

@@ -2,11 +2,29 @@ import RAPIER from '@dimforge/rapier3d-compat';
 import GUI from 'lil-gui';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
+import { BLOCKS, type BlockType } from './blocks';
+import { type Level, loadBundledLevels } from './level';
+import { loadProgress, recordResult } from './progress';
+import {
+  type BlockState,
+  type BlockStatus,
+  blockScore,
+  finalScore,
+  isSettled,
+  medalFor,
+  outcome,
+} from './rules';
 import { type PointerSample, powerTier, releaseVelocity } from './throw';
+import { createUi } from './ui';
 
 const STEP = 1 / 60;
 const MAX_STEPS_PER_FRAME = 5;
 const MAX_BALLS = 12;
+const BALL_FLIGHT_SECONDS = 6; // a ball counts as "in motion" for this long after launch
+const FALL_MARGIN = 0.3; // a block is fallen once its centre drops this far below the platform top
+const BLAST_RADIUS = 3.2;
+const BLAST_DELTA_V = 9; // m/s at the centre of an explosion
+const CHAIN_DELAY = 0.15; // s between a blast and the bombs it sets off
 
 const params = {
   gravity: 9.81,
@@ -22,14 +40,13 @@ const params = {
   flickMedium: 3000,
   flickFull: 7000,
   upwardBias: 0.06,
-  blockFriction: 0.7,
-  blockRestitution: 0.05,
   solverIterations: 8,
-  reset: () => resetTower(),
+  restart: () => loadLevel(levelIndex),
 };
 
 interface Entity {
   body: RAPIER.RigidBody;
+  collider: RAPIER.Collider;
   prevPos: THREE.Vector3;
   currPos: THREE.Vector3;
   prevRot: THREE.Quaternion;
@@ -37,12 +54,20 @@ interface Entity {
 }
 
 interface BlockEntity extends Entity {
-  instance: number; // index into the InstancedMesh
+  type: BlockType;
+  status: BlockStatus;
+  mesh: THREE.InstancedMesh;
+  instance: number; // index into the per-type InstancedMesh
+  size: THREE.Vector3;
+  exploding: boolean;
 }
 
 interface BallEntity extends Entity {
   mesh: THREE.Mesh;
+  age: number;
 }
+
+type Phase = 'menu' | 'playing' | 'won' | 'lost';
 
 await RAPIER.init();
 
@@ -100,76 +125,192 @@ resize();
 const world = new RAPIER.World({ x: 0, y: -params.gravity, z: 0 });
 world.timestep = STEP;
 world.integrationParameters.numSolverIterations = params.solverIterations;
+const events = new RAPIER.EventQueue(true);
 
 world.createCollider(RAPIER.ColliderDesc.cuboid(60, 0.5, 60).setTranslation(0, -0.5, 0).setFriction(0.9));
 
-const blockEntities: BlockEntity[] = [];
+const blocks: BlockEntity[] = [];
 const balls: BallEntity[] = [];
-const blockColliders: RAPIER.Collider[] = [];
+const colliderOwner = new Map<number, BlockEntity | BallEntity>();
+const blockMeshes: THREE.InstancedMesh[] = [];
+let platformCollider: RAPIER.Collider | null = null;
+let platformMesh: THREE.Mesh | null = null;
 
-const TOWER_LAYERS = 5; // 5 layers x 2x2 = 20 blocks
-const BLOCK_COUNT = TOWER_LAYERS * 4;
-const blockMesh = new THREE.InstancedMesh(
-  new THREE.BoxGeometry(1, 1, 1),
-  new THREE.MeshStandardMaterial({ roughness: 0.6 }),
-  BLOCK_COUNT,
-);
-blockMesh.castShadow = true;
-blockMesh.receiveShadow = true;
-blockMesh.frustumCulled = false;
-scene.add(blockMesh);
+const boxGeo = new THREE.BoxGeometry(1, 1, 1);
+const hiddenMatrix = new THREE.Matrix4().makeScale(0, 0, 0);
 
-function makeEntity(body: RAPIER.RigidBody): Entity {
+function makeEntityBase(body: RAPIER.RigidBody, collider: RAPIER.Collider): Entity {
   const t = body.translation();
   const r = body.rotation();
   const pos = new THREE.Vector3(t.x, t.y, t.z);
   const rot = new THREE.Quaternion(r.x, r.y, r.z, r.w);
-  return { body, prevPos: pos.clone(), currPos: pos, prevRot: rot.clone(), currRot: rot };
+  return { body, collider, prevPos: pos.clone(), currPos: pos, prevRot: rot.clone(), currRot: rot };
 }
 
-function resetTower() {
-  for (const e of blockEntities) world.removeRigidBody(e.body);
-  blockEntities.length = 0;
-  blockColliders.length = 0;
-  for (const b of balls) removeBall(b);
-  balls.length = 0;
-  throwsCount = 0;
-  hudThrows.textContent = '0';
+// ---------- game state ----------
+const levels = loadBundledLevels();
+let levelIndex = 0;
+let level: Level = levels[0];
+let phase: Phase = 'menu';
+let throwsUsed = 0;
+let simTime = 0;
+let lastMotion = 0;
+const pendingBlasts: { entity: BlockEntity; at: number }[] = [];
 
-  const palette = [0xe63946, 0xf4a261, 0xe9c46a, 0x2a9d8f, 0x457b9d];
-  const gap = 0.002; // tiny gap avoids initial interpenetration jitter
-  let i = 0;
-  for (let layer = 0; layer < TOWER_LAYERS; layer++) {
-    for (let k = 0; k < 4; k++) {
-      const x = (k % 2 === 0 ? -0.5 : 0.5) * (1 + gap);
-      const z = (k < 2 ? -0.5 : 0.5) * (1 + gap);
-      const y = 0.5 + layer * (1 + gap);
-      // blocks spawn asleep so the stack stands still until hit
-      const body = world.createRigidBody(
-        RAPIER.RigidBodyDesc.dynamic()
-          .setTranslation(x, y, z)
-          .setSleeping(true)
-          .setLinearDamping(0.05)
-          .setAngularDamping(0.1),
-      );
-      const col = world.createCollider(
-        RAPIER.ColliderDesc.cuboid(0.5, 0.5, 0.5)
-          .setDensity(1)
-          .setFriction(params.blockFriction)
-          .setRestitution(params.blockRestitution)
-          .setActiveEvents(RAPIER.ActiveEvents.COLLISION_EVENTS),
-        body,
-      );
-      blockColliders.push(col);
-      body.sleep(); // attaching the collider wakes the body, so sleep again
-      const e: BlockEntity = { ...makeEntity(body), instance: i };
-      blockMesh.setColorAt(i, new THREE.Color(palette[layer % palette.length]));
-      blockEntities.push(e);
-      i++;
-    }
+const ui = createUi({
+  onSelect: (i) => {
+    loadLevel(i);
+    ui.hideMenu();
+  },
+  onRetry: () => loadLevel(levelIndex),
+  onNext: () => loadLevel(Math.min(levelIndex + 1, levels.length - 1)),
+  onOpenMenu: () => {
+    phase = 'menu';
+    ui.showMenu(levels, loadProgress());
+  },
+});
+
+function blockStates(): BlockState[] {
+  return blocks.map((b) => ({ type: b.type, status: b.status }));
+}
+
+function throwsLeft() {
+  return level.throws - throwsUsed;
+}
+
+let lastStats = '';
+function refreshStats() {
+  const left = throwsLeft();
+  const score = blockScore(blockStates());
+  const key = `${left}/${score}`;
+  if (key === lastStats) return;
+  lastStats = key;
+  ui.setStats(left, score);
+}
+
+function clearLevel() {
+  for (const b of blocks) if (b.status !== 'removed') world.removeRigidBody(b.body); // removed ones are already gone
+  blocks.length = 0;
+  for (const m of blockMeshes) {
+    scene.remove(m);
+    m.dispose();
   }
-  if (blockMesh.instanceColor) blockMesh.instanceColor.needsUpdate = true;
+  blockMeshes.length = 0;
+  for (const b of balls) removeBallBody(b);
+  balls.length = 0;
+  colliderOwner.clear();
+  pendingBlasts.length = 0;
+  if (platformCollider) world.removeCollider(platformCollider, false);
+  if (platformMesh) {
+    scene.remove(platformMesh);
+    platformMesh.geometry.dispose();
+  }
+}
+
+function loadLevel(index: number) {
+  clearLevel();
+  levelIndex = index;
+  level = levels[index];
+  throwsUsed = 0;
+  simTime = 0;
+  lastMotion = 0;
+  lastStats = '';
+  phase = 'playing';
+
+  const [sx, sz] = level.platform.size;
+  const top = level.platform.top;
+  platformCollider = world.createCollider(
+    RAPIER.ColliderDesc.cuboid(sx / 2, top / 2, sz / 2)
+      .setTranslation(0, top / 2, 0)
+      .setFriction(0.9),
+  );
+  platformMesh = new THREE.Mesh(
+    new THREE.BoxGeometry(sx, top, sz),
+    new THREE.MeshStandardMaterial({ color: 0xb08968, roughness: 0.9 }),
+  );
+  platformMesh.position.set(0, top / 2, 0);
+  platformMesh.receiveShadow = true;
+  platformMesh.castShadow = true;
+  scene.add(platformMesh);
+
+  // one InstancedMesh per block type used by this level
+  const counts = new Map<BlockType, number>();
+  for (const b of level.blocks) counts.set(b.type, (counts.get(b.type) ?? 0) + 1);
+  const meshByType = new Map<BlockType, THREE.InstancedMesh>();
+  const nextInstance = new Map<BlockType, number>();
+  for (const [type, count] of counts) {
+    const def = BLOCKS[type];
+    const mesh = new THREE.InstancedMesh(
+      boxGeo,
+      new THREE.MeshStandardMaterial({
+        color: def.color,
+        roughness: type === 'gem' ? 0.25 : 0.6,
+        metalness: type === 'gem' ? 0.3 : 0,
+      }),
+      count,
+    );
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
+    mesh.frustumCulled = false;
+    scene.add(mesh);
+    blockMeshes.push(mesh);
+    meshByType.set(type, mesh);
+    nextInstance.set(type, 0);
+  }
+
+  for (const spec of level.blocks) {
+    const def = BLOCKS[spec.type];
+    const [x, y, z] = spec.pos;
+    const desc = def.mobile
+      ? RAPIER.RigidBodyDesc.dynamic().setLinearDamping(0.05).setAngularDamping(0.1)
+      : RAPIER.RigidBodyDesc.fixed();
+    desc
+      .setTranslation(x, y + top, z)
+      .setRotation({ x: 0, y: Math.sin(spec.rot / 2), z: 0, w: Math.cos(spec.rot / 2) });
+    const body = world.createRigidBody(desc);
+    const collider = world.createCollider(
+      RAPIER.ColliderDesc.cuboid(spec.size[0] / 2, spec.size[1] / 2, spec.size[2] / 2)
+        .setDensity(def.density)
+        .setFriction(def.friction)
+        .setRestitution(def.restitution)
+        .setActiveEvents(RAPIER.ActiveEvents.COLLISION_EVENTS),
+      body,
+    );
+    if (def.mobile) body.sleep(); // blocks spawn asleep; attaching the collider woke the body
+    const mesh = meshByType.get(spec.type) as THREE.InstancedMesh;
+    const instance = nextInstance.get(spec.type) ?? 0;
+    nextInstance.set(spec.type, instance + 1);
+    const entity: BlockEntity = {
+      ...makeEntityBase(body, collider),
+      type: spec.type,
+      status: 'alive',
+      mesh,
+      instance,
+      size: new THREE.Vector3(...spec.size),
+      exploding: false,
+    };
+    blocks.push(entity);
+    colliderOwner.set(collider.handle, entity);
+  }
+
+  frameCamera();
   syncRender(1);
+  refreshStats();
+  ui.setLevel(level);
+}
+
+function frameCamera() {
+  let maxY = 0;
+  let maxX = 0;
+  for (const b of level.blocks) {
+    maxY = Math.max(maxY, b.pos[1] + b.size[1] / 2);
+    maxX = Math.max(maxX, Math.abs(b.pos[0]) + b.size[0] / 2);
+  }
+  const top = level.platform.top;
+  const dist = Math.min(Math.max(9 + maxY * 1.4 + maxX * 1.2, 11), 26);
+  controls.target.set(0, top + maxY / 2, 0);
+  camera.position.set(0, top + maxY * 0.7 + 2.5, dist);
+  controls.update();
 }
 
 // ---------- balls ----------
@@ -184,24 +325,97 @@ function spawnBall(origin: THREE.Vector3, velocity: THREE.Vector3) {
       .setLinvel(velocity.x, velocity.y, velocity.z)
       .setCcdEnabled(true), // fast balls must not tunnel through blocks
   );
-  world.createCollider(
-    RAPIER.ColliderDesc.ball(r).setMass(params.ballMass).setFriction(0.5).setRestitution(0.2),
+  const collider = world.createCollider(
+    RAPIER.ColliderDesc.ball(r)
+      .setMass(params.ballMass)
+      .setFriction(0.5)
+      .setRestitution(0.2)
+      .setActiveEvents(RAPIER.ActiveEvents.COLLISION_EVENTS),
     body,
   );
   const mesh = new THREE.Mesh(ballGeo, ballMat);
   mesh.scale.setScalar(r);
   mesh.castShadow = true;
   scene.add(mesh);
-  balls.push({ ...makeEntity(body), mesh });
+  const ball: BallEntity = { ...makeEntityBase(body, collider), mesh, age: 0 };
+  balls.push(ball);
+  colliderOwner.set(collider.handle, ball);
   if (balls.length > MAX_BALLS) {
     const oldest = balls.shift();
-    if (oldest) removeBall(oldest);
+    if (oldest) removeBallBody(oldest);
   }
 }
 
-function removeBall(e: BallEntity) {
+function removeBallBody(e: BallEntity) {
+  colliderOwner.delete(e.collider.handle);
   world.removeRigidBody(e.body);
   scene.remove(e.mesh);
+}
+
+// ---------- behaviours: explode / vanish ----------
+function removeBlock(e: BlockEntity) {
+  if (e.status === 'removed') return;
+  e.status = 'removed';
+  colliderOwner.delete(e.collider.handle);
+  world.removeRigidBody(e.body);
+  e.mesh.setMatrixAt(e.instance, hiddenMatrix);
+  e.mesh.instanceMatrix.needsUpdate = true;
+}
+
+function scheduleBlast(e: BlockEntity, delay: number) {
+  if (e.exploding || e.status === 'removed') return;
+  e.exploding = true;
+  pendingBlasts.push({ entity: e, at: simTime + delay });
+}
+
+const blastCenter = new THREE.Vector3();
+const blastDir = new THREE.Vector3();
+
+function detonate(bomb: BlockEntity) {
+  blastCenter.copy(bomb.currPos);
+  removeBlock(bomb);
+  const targets: (BlockEntity | BallEntity)[] = [...blocks, ...balls];
+  for (const t of targets) {
+    if (t === bomb || ('status' in t && t.status === 'removed')) continue;
+    if ('type' in t && !BLOCKS[t.type].mobile) continue;
+    blastDir.copy(t.currPos).sub(blastCenter);
+    const d = blastDir.length();
+    if (d > BLAST_RADIUS) continue;
+    if ('type' in t && BLOCKS[t.type].behaviour === 'explode') scheduleBlast(t, CHAIN_DELAY);
+    const falloff = 1 - d / BLAST_RADIUS;
+    blastDir.y += 0.35; // blasts lift as well as push
+    blastDir.normalize().multiplyScalar(BLAST_DELTA_V * falloff * t.body.mass());
+    t.body.applyImpulse(blastDir, true);
+  }
+}
+
+function bodySpeed(handle: number): number {
+  const parent = world.getCollider(handle)?.parent();
+  if (!parent) return 0;
+  const v = parent.linvel();
+  return Math.hypot(v.x, v.y, v.z);
+}
+
+function handleImpacts() {
+  const toVanish = new Set<BlockEntity>();
+  events.drainCollisionEvents((h1, h2, started) => {
+    if (!started) return;
+    const a = colliderOwner.get(h1);
+    const b = colliderOwner.get(h2);
+    const blocksHit = [a, b].filter(
+      (e): e is BlockEntity => !!e && 'type' in e && !!BLOCKS[e.type].behaviour,
+    );
+    if (blocksHit.length === 0) return;
+    // post-solve speed of the faster body; resting contacts stay far below the thresholds
+    const speed = Math.max(bodySpeed(h1), bodySpeed(h2));
+    for (const e of blocksHit) {
+      const def = BLOCKS[e.type];
+      if (speed < (def.triggerSpeed ?? 0)) continue;
+      if (def.behaviour === 'explode') scheduleBlast(e, 0);
+      else if (def.behaviour === 'vanish') toVanish.add(e);
+    }
+  });
+  for (const e of toVanish) removeBlock(e);
 }
 
 // ---------- fixed step + interpolation ----------
@@ -217,46 +431,104 @@ function capture(e: Entity) {
 const tmpPos = new THREE.Vector3();
 const tmpRot = new THREE.Quaternion();
 const tmpMat = new THREE.Matrix4();
-const unitScale = new THREE.Vector3(1, 1, 1);
 
 function syncRender(alpha: number) {
-  for (const e of blockEntities) {
+  for (const e of blocks) {
+    if (e.status === 'removed') continue;
     tmpPos.lerpVectors(e.prevPos, e.currPos, alpha);
     tmpRot.slerpQuaternions(e.prevRot, e.currRot, alpha);
-    tmpMat.compose(tmpPos, tmpRot, unitScale);
-    blockMesh.setMatrixAt(e.instance, tmpMat);
+    tmpMat.compose(tmpPos, tmpRot, e.size);
+    e.mesh.setMatrixAt(e.instance, tmpMat);
   }
-  blockMesh.instanceMatrix.needsUpdate = true;
+  for (const m of blockMeshes) m.instanceMatrix.needsUpdate = true;
   for (const e of balls) {
     e.mesh.position.lerpVectors(e.prevPos, e.currPos, alpha);
     e.mesh.quaternion.slerpQuaternions(e.prevRot, e.currRot, alpha);
   }
 }
 
+function speedOf(body: RAPIER.RigidBody) {
+  const v = body.linvel();
+  return Math.hypot(v.x, v.y, v.z);
+}
+
 function stepPhysics() {
-  world.step();
-  for (const e of blockEntities) capture(e);
-  for (const e of balls) capture(e);
-  // drop balls that left the world
-  for (let i = balls.length - 1; i >= 0; i--) {
-    if (balls[i].currPos.y < -20) {
-      removeBall(balls[i]);
-      balls.splice(i, 1);
+  world.step(events);
+  simTime += STEP;
+  handleImpacts();
+
+  for (let i = pendingBlasts.length - 1; i >= 0; i--) {
+    if (pendingBlasts[i].at <= simTime) {
+      const [due] = pendingBlasts.splice(i, 1);
+      detonate(due.entity);
     }
+  }
+
+  const fallY = level.platform.top - FALL_MARGIN;
+  let moving = pendingBlasts.length > 0;
+  let allAsleep = true;
+  for (const e of blocks) {
+    if (e.status === 'removed' || !BLOCKS[e.type].mobile) continue;
+    capture(e);
+    if (e.status === 'alive' && e.currPos.y < fallY) e.status = 'fallen';
+    if (!e.body.isSleeping()) {
+      allAsleep = false;
+      if (speedOf(e.body) > 0.1) moving = true;
+    }
+  }
+  for (let i = balls.length - 1; i >= 0; i--) {
+    const b = balls[i];
+    capture(b);
+    b.age += STEP;
+    if (b.currPos.y < -20) {
+      removeBallBody(b);
+      balls.splice(i, 1);
+      continue;
+    }
+    if (b.age < BALL_FLIGHT_SECONDS && !b.body.isSleeping() && speedOf(b.body) > 1) {
+      moving = true;
+      allAsleep = false;
+    }
+  }
+  if (moving) lastMotion = simTime;
+
+  refreshStats();
+  if (phase === 'playing' && throwsUsed > 0 && isSettled(simTime - lastMotion, allAsleep && !moving)) {
+    finishIfDone();
+  }
+}
+
+function finishIfDone() {
+  const states = blockStates();
+  const result = outcome(level.goal, states, throwsLeft());
+  if (result === 'playing') return;
+  phase = result;
+  if (result === 'won') {
+    const score = finalScore(states, throwsLeft());
+    const medal = medalFor(score, level.medals);
+    const saved = recordResult(level.id, score, medal);
+    ui.showResult({ won: true, score, medal, best: saved.best, hasNext: levelIndex < levels.length - 1 });
+  } else {
+    ui.showResult({ won: false, score: 0, medal: null, best: 0, hasNext: false });
   }
 }
 
 // ---------- flick to throw ----------
-const hudThrows = document.getElementById('throws') as HTMLElement;
 const hudTier = document.getElementById('tier') as HTMLElement;
 const hudFlick = document.getElementById('flick') as HTMLElement;
-let throwsCount = 0;
 const tierNames = ['tap', 'light', 'medium', 'full'];
 
 const raycaster = new THREE.Raycaster();
 let samples: PointerSample[] = [];
 let throwPointer: number | null = null;
 const activeTouches = new Set<number>();
+
+function canThrow() {
+  return phase === 'playing' && throwsLeft() > 0;
+}
+
+// last known pointer position, for the aim preview (mouse hover or active throw)
+const aim = { x: 0, y: 0, visible: false };
 
 canvas.addEventListener('pointerdown', (ev) => {
   if (ev.pointerType === 'touch') {
@@ -266,7 +538,7 @@ canvas.addEventListener('pointerdown', (ev) => {
       return;
     }
   }
-  if (ev.button !== 0 || throwPointer !== null) return;
+  if (ev.button !== 0 || throwPointer !== null || !canThrow()) return;
   throwPointer = ev.pointerId;
   aim.x = ev.clientX;
   aim.y = ev.clientY;
@@ -274,9 +546,6 @@ canvas.addEventListener('pointerdown', (ev) => {
   samples = [{ t: ev.timeStamp, x: ev.clientX, y: ev.clientY }];
   canvas.setPointerCapture(ev.pointerId);
 });
-
-// last known pointer position, for the aim preview (mouse hover or active throw)
-const aim = { x: 0, y: 0, visible: false };
 
 canvas.addEventListener('pointermove', (ev) => {
   aim.x = ev.clientX;
@@ -309,9 +578,9 @@ canvas.addEventListener('pointercancel', (ev) => endPointer(ev, false));
 addEventListener('keydown', (ev) => {
   if (ev.code === 'Space') {
     ev.preventDefault();
-    launch(innerWidth / 2, innerHeight / 2, Infinity); // quick full-power throw
-  } else if (ev.code === 'KeyR') {
-    resetTower();
+    launch(innerWidth / 2, innerHeight / 2, Number.POSITIVE_INFINITY); // quick full-power throw
+  } else if (ev.code === 'KeyR' && phase !== 'menu') {
+    loadLevel(levelIndex);
   }
 });
 
@@ -356,10 +625,12 @@ function computeShot(px: number, py: number, flickSpeed: number) {
 }
 
 function launch(px: number, py: number, flickSpeed: number) {
+  if (!canThrow()) return;
   const s = computeShot(px, py, flickSpeed);
   spawnBall(s.origin, s.velocity);
-  throwsCount++;
-  hudThrows.textContent = String(throwsCount);
+  throwsUsed++;
+  lastMotion = simTime;
+  refreshStats();
   hudTier.textContent = tierNames[s.tier];
 }
 
@@ -391,8 +662,9 @@ scene.add(arc);
 
 function updateAimPreview(now: number) {
   const pressing = throwPointer !== null;
-  ring.visible = arc.visible = aim.visible;
-  if (!aim.visible) return;
+  const show = aim.visible && canThrow();
+  ring.visible = arc.visible = show;
+  if (!show) return;
 
   // live flick speed includes "now", so the preview drops as the pointer slows
   const live = pressing ? [...samples, { t: now, x: aim.x, y: aim.y }] : [];
@@ -436,21 +708,16 @@ flick.add(params, 'flickLight', 100, 4000);
 flick.add(params, 'flickMedium', 500, 8000);
 flick.add(params, 'flickFull', 1000, 15000);
 gui.add(params, 'upwardBias', 0, 0.3);
-const mat = gui.addFolder('Blocks');
-mat.add(params, 'blockFriction', 0, 1.5).onChange((v: number) => {
-  for (const c of blockColliders) c.setFriction(v);
-});
-mat.add(params, 'blockRestitution', 0, 1).onChange((v: number) => {
-  for (const c of blockColliders) c.setRestitution(v);
-});
 gui
   .add(params, 'solverIterations', 1, 30, 1)
   .onChange((n: number) => (world.integrationParameters.numSolverIterations = n));
-gui.add(params, 'reset').name('Reset tower (R)');
-if (matchMedia('(max-width: 700px)').matches) gui.close();
+gui.add(params, 'restart').name('Restart level (R)');
+gui.close();
 
 // ---------- main loop ----------
-resetTower();
+loadLevel(0);
+phase = 'menu';
+ui.showMenu(levels, loadProgress());
 
 let last = performance.now();
 let acc = 0;
@@ -474,15 +741,20 @@ requestAnimationFrame(frame);
 
 // test hook for smoke tests
 (window as unknown as { __blox: unknown }).__blox = {
-  blocks: blockEntities,
+  levels,
+  blocks,
   balls,
+  loadLevel: (i: number) => {
+    loadLevel(i);
+    ui.hideMenu();
+  },
+  phase: () => phase,
+  states: blockStates,
   step: (n: number) => {
     for (let i = 0; i < n; i++) stepPhysics();
   },
-  awake: () => blockEntities.filter((e) => !e.body.isSleeping()).length,
+  awake: () =>
+    blocks.filter((e) => e.status !== 'removed' && BLOCKS[e.type].mobile && !e.body.isSleeping()).length,
   launch,
   aim,
-  ring,
-  arc,
-  updateAimPreview,
 };

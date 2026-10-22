@@ -24,10 +24,10 @@ Full research, game design and phased plan: see `PLAN.md`. Work through it phase
 
 ## Commands (once scaffolded)
 
-- `npm run dev` — dev server
-- `npm run build` — production build
-- `npm test` — Vitest
+- `pnpm dev` — dev server
+- `pnpm build` — production build
+- `pnpm test` — Vitest
 
 ## Current status
 
-Phase 0 prototype built (`src/main.ts`, `src/throw.ts`): tower of 20 asleep blocks, flick-to-throw, lil-gui panel. Remaining Phase 0: tune throw feel on real mouse + touch, deploy, phone test. Gate: do not start Phase 1 until the throw feels good.
+Phase 0 done (throw tuned for mouse; phone test over LAN pending). Phase 1 built: zod level schema (`src/level.ts`), block registry (`src/blocks.ts`), pure rules (`src/rules.ts`), HUD/menu/results (`src/ui.ts`), localStorage medals (`src/progress.ts`), 10 JSON levels in `src/levels/`. Remaining: score pop-ups, play all 10 levels on a phone (Phase 1 gate), tune medal thresholds and difficulty.
