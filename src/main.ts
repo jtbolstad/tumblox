@@ -13,14 +13,14 @@ const params = {
   ballMass: 4,
   ballRadius: 0.35,
   // ball speed (m/s) per power tier: tap, light, medium, full
-  speedTap: 6,
-  speedLight: 12,
-  speedMedium: 20,
-  speedFull: 30,
+  speedTap: 15,
+  speedLight: 20,
+  speedMedium: 25,
+  speedFull: 32,
   // flick speed (px/s) at which tiers 1..3 start
-  flickLight: 300,
-  flickMedium: 900,
-  flickFull: 1800,
+  flickLight: 1200,
+  flickMedium: 3000,
+  flickFull: 7000,
   upwardBias: 0.06,
   blockFriction: 0.7,
   blockRestitution: 0.05,
@@ -249,6 +249,7 @@ function stepPhysics() {
 // ---------- flick to throw ----------
 const hudThrows = document.getElementById('throws') as HTMLElement;
 const hudTier = document.getElementById('tier') as HTMLElement;
+const hudFlick = document.getElementById('flick') as HTMLElement;
 let throwsCount = 0;
 const tierNames = ['tap', 'light', 'medium', 'full'];
 
@@ -398,6 +399,7 @@ function updateAimPreview(now: number) {
   const speed = pressing ? releaseVelocity(live).speed : 0;
   const s = computeShot(aim.x, aim.y, speed);
   hudTier.textContent = pressing ? tierNames[s.tier] : '-';
+  if (pressing) hudFlick.textContent = String(Math.round(speed));
 
   ring.position.copy(s.target);
   ring.lookAt(camera.position);
@@ -430,9 +432,9 @@ power.add(params, 'speedLight', 1, 40);
 power.add(params, 'speedMedium', 1, 40);
 power.add(params, 'speedFull', 1, 60);
 const flick = gui.addFolder('Flick thresholds (px/s)');
-flick.add(params, 'flickLight', 50, 2000);
-flick.add(params, 'flickMedium', 200, 4000);
-flick.add(params, 'flickFull', 500, 8000);
+flick.add(params, 'flickLight', 100, 4000);
+flick.add(params, 'flickMedium', 500, 8000);
+flick.add(params, 'flickFull', 1000, 15000);
 gui.add(params, 'upwardBias', 0, 0.3);
 const mat = gui.addFolder('Blocks');
 mat.add(params, 'blockFriction', 0, 1.5).onChange((v: number) => {
