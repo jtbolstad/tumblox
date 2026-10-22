@@ -1,6 +1,7 @@
 import type { Goal, Level } from './level';
 import type { LevelProgress } from './progress';
 import type { Medal } from './rules';
+import { TOOLS } from './tools';
 
 function el<T extends HTMLElement>(id: string): T {
   const node = document.getElementById(id);
@@ -64,8 +65,18 @@ export function createUi(handlers: UiHandlers) {
     },
     setLevel(level: Level) {
       el('level-name').textContent = level.name;
-      el('goal').textContent = goalText(level.goal);
+      el('goal').textContent = `${goalText(level.goal)} · ${TOOLS[level.tool].name}`;
       result.hidden = true;
+    },
+    /** Floating score text at a screen position; removes itself when its animation ends. */
+    popup(text: string, x: number, y: number, negative: boolean) {
+      const node = document.createElement('div');
+      node.className = negative ? 'popup negative' : 'popup';
+      node.textContent = text;
+      node.style.left = `${x}px`;
+      node.style.top = `${y}px`;
+      node.addEventListener('animationend', () => node.remove());
+      document.body.append(node);
     },
     setStats(throwsLeft: number, score: number) {
       el('throws').textContent = String(throwsLeft);

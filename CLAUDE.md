@@ -30,4 +30,4 @@ Full research, game design and phased plan: see `PLAN.md`. Work through it phase
 
 ## Current status
 
-Phase 0 done (throw tuned for mouse; phone test over LAN pending). Phase 1 built: zod level schema (`src/level.ts`), block registry (`src/blocks.ts`), pure rules (`src/rules.ts`), HUD/menu/results (`src/ui.ts`), localStorage medals (`src/progress.ts`), 10 JSON levels in `src/levels/`. Remaining: score pop-ups, play all 10 levels on a phone (Phase 1 gate), tune medal thresholds and difficulty.
+Phase 0 and 1 done; throw tuned for mouse (phone test over LAN still pending). Phase 2 started: 12 block types (`src/blocks.ts`), 4 tools (`src/tools.ts`), score pop-ups, 16 levels in `src/levels/` (generated once, now hand-editable JSON). Not yet: grab tool + Jenga goal, multiplier zones, Explore/Adventure sets, audio/particles/slow-mo, playtest tuning of difficulty and medal thresholds.

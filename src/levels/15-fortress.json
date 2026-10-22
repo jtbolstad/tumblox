@@ -1,0 +1,69 @@
+{
+  "id": "fortress",
+  "name": "Fortress",
+  "theme": "meadow",
+  "tool": "bomb",
+  "throws": 3,
+  "goal": {
+    "type": "toppleGems"
+  },
+  "medals": {
+    "bronze": 300,
+    "silver": 350,
+    "gold": 400
+  },
+  "platform": {
+    "size": [3, 3],
+    "top": 1
+  },
+  "blocks": [
+    {
+      "type": "gem",
+      "pos": [-1, 0.5, -1]
+    },
+    {
+      "type": "steel",
+      "pos": [-1, 0.5, 0]
+    },
+    {
+      "type": "steel",
+      "pos": [-1, 1.5, 0]
+    },
+    {
+      "type": "steel",
+      "pos": [-1, 2.5, 0]
+    },
+    {
+      "type": "gem",
+      "pos": [0, 0.5, -1]
+    },
+    {
+      "type": "steel",
+      "pos": [0, 0.5, 0]
+    },
+    {
+      "type": "steel",
+      "pos": [0, 1.5, 0]
+    },
+    {
+      "type": "steel",
+      "pos": [0, 2.5, 0]
+    },
+    {
+      "type": "gem",
+      "pos": [1, 0.5, -1]
+    },
+    {
+      "type": "steel",
+      "pos": [1, 0.5, 0]
+    },
+    {
+      "type": "steel",
+      "pos": [1, 1.5, 0]
+    },
+    {
+      "type": "steel",
+      "pos": [1, 2.5, 0]
+    }
+  ]
+}

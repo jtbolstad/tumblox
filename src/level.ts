@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { BLOCK_IDS } from './blocks';
+import { TOOL_IDS } from './tools';
 
 const vec3 = z.tuple([z.number(), z.number(), z.number()]);
 
@@ -13,7 +14,7 @@ export const levelSchema = z.object({
   id: z.string().min(1),
   name: z.string().min(1),
   theme: z.string().default('meadow'),
-  tool: z.literal('ball').default('ball'),
+  tool: z.enum(TOOL_IDS).default('ball'),
   throws: z.number().int().positive(),
   goal: goalSchema,
   medals: z

@@ -15,6 +15,7 @@ import {
   outcome,
 } from './rules';
 import { type PointerSample, powerTier, releaseVelocity } from './throw';
+import { TOOL_IDS, TOOLS, type ToolId } from './tools';
 import { createUi } from './ui';
 
 const STEP = 1 / 60;
@@ -25,11 +26,13 @@ const FALL_MARGIN = 0.3; // a block is fallen once its centre drops this far bel
 const BLAST_RADIUS = 3.2;
 const BLAST_DELTA_V = 9; // m/s at the centre of an explosion
 const CHAIN_DELAY = 0.15; // s between a blast and the bombs it sets off
+const HIT_COOLDOWN = 0.2; // s before the same multi-hit block can lose another hit
+const BOMB_BALL_TRIGGER_SPEED = 3; // m/s
 
 const params = {
   gravity: 9.81,
-  ballMass: 4,
-  ballRadius: 0.35,
+  massScale: 1, // multiplies every tool's mass
+  radiusScale: 1,
   // ball speed (m/s) per power tier: tap, light, medium, full
   speedTap: 15,
   speedLight: 20,
@@ -60,12 +63,18 @@ interface BlockEntity extends Entity {
   instance: number; // index into the per-type InstancedMesh
   size: THREE.Vector3;
   exploding: boolean;
+  hitsLeft: number; // vanish blocks: hard hits remaining
+  lastHit: number; // sim time of the last counted hit, so one impact is not counted per contact
 }
 
 interface BallEntity extends Entity {
   mesh: THREE.Mesh;
   age: number;
+  tool: ToolId;
+  exploding: boolean;
 }
+
+type Blaster = BlockEntity | BallEntity;
 
 type Phase = 'menu' | 'playing' | 'won' | 'lost';
 
@@ -155,7 +164,7 @@ let phase: Phase = 'menu';
 let throwsUsed = 0;
 let simTime = 0;
 let lastMotion = 0;
-const pendingBlasts: { entity: BlockEntity; at: number }[] = [];
+const pendingBlasts: { entity: Blaster; at: number }[] = [];
 
 const ui = createUi({
   onSelect: (i) => {
@@ -288,6 +297,8 @@ function loadLevel(index: number) {
       instance,
       size: new THREE.Vector3(...spec.size),
       exploding: false,
+      hitsLeft: def.hits ?? 1,
+      lastHit: -1,
     };
     blocks.push(entity);
     colliderOwner.set(collider.handle, entity);
@@ -315,10 +326,13 @@ function frameCamera() {
 
 // ---------- balls ----------
 const ballGeo = new THREE.SphereGeometry(1, 24, 16);
-const ballMat = new THREE.MeshStandardMaterial({ color: 0xffb703, roughness: 0.35 });
+const toolMats = Object.fromEntries(
+  TOOL_IDS.map((id) => [id, new THREE.MeshStandardMaterial({ color: TOOLS[id].color, roughness: 0.35 })]),
+) as Record<ToolId, THREE.MeshStandardMaterial>;
 
 function spawnBall(origin: THREE.Vector3, velocity: THREE.Vector3) {
-  const r = params.ballRadius;
+  const tool = TOOLS[level.tool];
+  const r = tool.radius * params.radiusScale;
   const body = world.createRigidBody(
     RAPIER.RigidBodyDesc.dynamic()
       .setTranslation(origin.x, origin.y, origin.z)
@@ -327,17 +341,23 @@ function spawnBall(origin: THREE.Vector3, velocity: THREE.Vector3) {
   );
   const collider = world.createCollider(
     RAPIER.ColliderDesc.ball(r)
-      .setMass(params.ballMass)
-      .setFriction(0.5)
-      .setRestitution(0.2)
+      .setMass(tool.mass * params.massScale)
+      .setFriction(tool.friction)
+      .setRestitution(tool.restitution)
       .setActiveEvents(RAPIER.ActiveEvents.COLLISION_EVENTS),
     body,
   );
-  const mesh = new THREE.Mesh(ballGeo, ballMat);
+  const mesh = new THREE.Mesh(ballGeo, toolMats[level.tool]);
   mesh.scale.setScalar(r);
   mesh.castShadow = true;
   scene.add(mesh);
-  const ball: BallEntity = { ...makeEntityBase(body, collider), mesh, age: 0 };
+  const ball: BallEntity = {
+    ...makeEntityBase(body, collider),
+    mesh,
+    age: 0,
+    tool: level.tool,
+    exploding: false,
+  };
   balls.push(ball);
   colliderOwner.set(collider.handle, ball);
   if (balls.length > MAX_BALLS) {
@@ -362,8 +382,8 @@ function removeBlock(e: BlockEntity) {
   e.mesh.instanceMatrix.needsUpdate = true;
 }
 
-function scheduleBlast(e: BlockEntity, delay: number) {
-  if (e.exploding || e.status === 'removed') return;
+function scheduleBlast(e: Blaster, delay: number) {
+  if (e.exploding || ('status' in e && e.status === 'removed')) return;
   e.exploding = true;
   pendingBlasts.push({ entity: e, at: simTime + delay });
 }
@@ -371,12 +391,18 @@ function scheduleBlast(e: BlockEntity, delay: number) {
 const blastCenter = new THREE.Vector3();
 const blastDir = new THREE.Vector3();
 
-function detonate(bomb: BlockEntity) {
-  blastCenter.copy(bomb.currPos);
-  removeBlock(bomb);
-  const targets: (BlockEntity | BallEntity)[] = [...blocks, ...balls];
+function detonate(source: Blaster) {
+  blastCenter.copy(source.currPos);
+  if ('type' in source) {
+    removeBlock(source);
+  } else {
+    const i = balls.indexOf(source);
+    if (i >= 0) balls.splice(i, 1);
+    removeBallBody(source);
+  }
+  const targets: Blaster[] = [...blocks, ...balls];
   for (const t of targets) {
-    if (t === bomb || ('status' in t && t.status === 'removed')) continue;
+    if (t === source || ('status' in t && t.status === 'removed')) continue;
     if ('type' in t && !BLOCKS[t.type].mobile) continue;
     blastDir.copy(t.currPos).sub(blastCenter);
     const d = blastDir.length();
@@ -405,14 +431,26 @@ function handleImpacts() {
     const blocksHit = [a, b].filter(
       (e): e is BlockEntity => !!e && 'type' in e && !!BLOCKS[e.type].behaviour,
     );
-    if (blocksHit.length === 0) return;
+    const bombBall = [a, b].find((e): e is BallEntity => !!e && 'tool' in e && !!TOOLS[e.tool].explodes);
+    if (blocksHit.length === 0 && !bombBall) return;
     // post-solve speed of the faster body; resting contacts stay far below the thresholds
     const speed = Math.max(bodySpeed(h1), bodySpeed(h2));
+    if (bombBall && speed >= BOMB_BALL_TRIGGER_SPEED) scheduleBlast(bombBall, 0);
     for (const e of blocksHit) {
       const def = BLOCKS[e.type];
       if (speed < (def.triggerSpeed ?? 0)) continue;
-      if (def.behaviour === 'explode') scheduleBlast(e, 0);
-      else if (def.behaviour === 'vanish') toVanish.add(e);
+      if (def.behaviour === 'explode') {
+        scheduleBlast(e, 0);
+      } else if (def.behaviour === 'chemical') {
+        // only a chemical-on-chemical touch sets it off
+        if (a && b && 'type' in a && 'type' in b && a.type === 'chemical' && b.type === 'chemical') {
+          scheduleBlast(e, 0);
+        }
+      } else if (def.behaviour === 'vanish' && simTime - e.lastHit > HIT_COOLDOWN) {
+        e.lastHit = simTime;
+        e.hitsLeft--;
+        if (e.hitsLeft <= 0) toVanish.add(e);
+      }
     }
   });
   for (const e of toVanish) removeBlock(e);
@@ -452,6 +490,24 @@ function speedOf(body: RAPIER.RigidBody) {
   return Math.hypot(v.x, v.y, v.z);
 }
 
+const popupPos = new THREE.Vector3();
+
+/** Floating "+100" / "-100" where a scoring block fell, so the player sees what counted. */
+function popupFor(e: BlockEntity) {
+  const points = BLOCKS[e.type].points;
+  if (points === 0) return;
+  popupPos.copy(e.currPos);
+  popupPos.y = Math.max(popupPos.y, level.platform.top) + 0.8; // above the block, not under the ground
+  popupPos.project(camera);
+  if (popupPos.z > 1) return; // behind the camera
+  ui.popup(
+    `${points > 0 ? '+' : ''}${points}`,
+    ((popupPos.x + 1) / 2) * innerWidth,
+    ((1 - popupPos.y) / 2) * innerHeight,
+    points < 0,
+  );
+}
+
 function stepPhysics() {
   world.step(events);
   simTime += STEP;
@@ -470,7 +526,10 @@ function stepPhysics() {
   for (const e of blocks) {
     if (e.status === 'removed' || !BLOCKS[e.type].mobile) continue;
     capture(e);
-    if (e.status === 'alive' && e.currPos.y < fallY) e.status = 'fallen';
+    if (e.status === 'alive' && e.currPos.y < fallY) {
+      e.status = 'fallen';
+      popupFor(e);
+    }
     if (!e.body.isSleeping()) {
       allAsleep = false;
       if (speedOf(e.body) > 0.1) moving = true;
@@ -696,8 +755,8 @@ function updateAimPreview(now: number) {
 // ---------- debug panel ----------
 const gui = new GUI({ title: 'Debug' });
 gui.add(params, 'gravity', 1, 30).onChange((g: number) => (world.gravity = { x: 0, y: -g, z: 0 }));
-gui.add(params, 'ballMass', 0.5, 40);
-gui.add(params, 'ballRadius', 0.15, 0.8);
+gui.add(params, 'massScale', 0.25, 4);
+gui.add(params, 'radiusScale', 0.5, 2);
 const power = gui.addFolder('Power curve (m/s per tier)');
 power.add(params, 'speedTap', 1, 40);
 power.add(params, 'speedLight', 1, 40);

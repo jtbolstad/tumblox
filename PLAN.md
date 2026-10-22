@@ -209,14 +209,15 @@ flowchart TD
 - [x] Collision event queue → behaviours; radial explosion impulse with chain delay
 - [x] Settle detection and goal evaluation: topple gems, score target, clear board
 - [x] Throws counter, medal screen, retry / next
-- [ ] Floating score pop-ups on fallen blocks (HUD score only so far)
+- [x] Floating score pop-ups on fallen blocks
 - [x] Level select with saved medals (localStorage)
 - [x] 10 levels; Vitest tests for scoring and goal rules
 
 **Phase 2 — Depth and juice**
 - [ ] Grab tool: raycast pick + spring to kinematic cursor anchor; Jenga goal type
-- [ ] Blocks: wood, steel, chemical, penalty, ice, multi-hit vanish; multiplier zones
-- [ ] Tools: heavy ball, bomb ball, bouncy ball
+- [x] Blocks: wood, steel, chemical, penalty, ice, multi-hit vanish
+- [ ] Multiplier zones
+- [x] Tools: heavy ball, bomb ball, bouncy ball
 - [ ] Explore tutorial sets (6) and 2 themed Adventure worlds (~24 levels)
 - [ ] Audio (impact sounds by material and speed, music), particles, camera shake, slow-mo on chains
 - [ ] Playtest round; tune difficulty and medal thresholds

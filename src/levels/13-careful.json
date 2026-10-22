@@ -1,0 +1,62 @@
+{
+  "id": "careful",
+  "name": "Careful Now",
+  "theme": "meadow",
+  "tool": "ball",
+  "throws": 3,
+  "goal": {
+    "type": "scoreTarget",
+    "target": 200
+  },
+  "medals": {
+    "bronze": 200,
+    "silver": 250,
+    "gold": 300
+  },
+  "platform": {
+    "size": [5, 5],
+    "top": 1
+  },
+  "blocks": [
+    {
+      "type": "wood",
+      "pos": [-2, 0.5, 0]
+    },
+    {
+      "type": "wood",
+      "pos": [-1, 0.5, 0]
+    },
+    {
+      "type": "wood",
+      "pos": [0, 0.5, 0]
+    },
+    {
+      "type": "wood",
+      "pos": [1, 0.5, 0]
+    },
+    {
+      "type": "wood",
+      "pos": [2, 0.5, 0]
+    },
+    {
+      "type": "point",
+      "pos": [-2, 1.5, 0]
+    },
+    {
+      "type": "penalty",
+      "pos": [-1, 1.5, 0]
+    },
+    {
+      "type": "point",
+      "pos": [0, 1.5, 0]
+    },
+    {
+      "type": "penalty",
+      "pos": [1, 1.5, 0]
+    },
+    {
+      "type": "point",
+      "pos": [2, 1.5, 0]
+    }
+  ]
+}
