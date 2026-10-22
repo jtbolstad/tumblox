@@ -28,6 +28,8 @@ const BLAST_DELTA_V = 9; // m/s at the centre of an explosion
 const CHAIN_DELAY = 0.15; // s between a blast and the bombs it sets off
 const HIT_COOLDOWN = 0.2; // s before the same multi-hit block can lose another hit
 const BOMB_BALL_TRIGGER_SPEED = 3; // m/s
+const PULL_DISTANCE = 2.6; // m a grabbed block must travel from its start to count as pulled out
+const COLLAPSE_DISTANCE = 1.5; // m an untouched Jenga block may drift before the tower counts as fallen
 
 const params = {
   gravity: 9.81,
@@ -44,6 +46,10 @@ const params = {
   flickFull: 7000,
   upwardBias: 0.06,
   solverIterations: 8,
+  // grab spring: acceleration = stiffness * offset - damping * velocity, capped at maxAccel
+  grabStiffness: 60,
+  grabDamping: 12,
+  grabMaxAccel: 50,
   restart: () => loadLevel(levelIndex),
 };
 
@@ -65,6 +71,8 @@ interface BlockEntity extends Entity {
   exploding: boolean;
   hitsLeft: number; // vanish blocks: hard hits remaining
   lastHit: number; // sim time of the last counted hit, so one impact is not counted per contact
+  startPos: THREE.Vector3; // where the level placed it, to measure Jenga pulls and collapse
+  grabbedOnce: boolean;
 }
 
 interface BallEntity extends Entity {
@@ -165,6 +173,7 @@ let throwsUsed = 0;
 let simTime = 0;
 let lastMotion = 0;
 const pendingBlasts: { entity: Blaster; at: number }[] = [];
+let collapsed = false; // a Jenga tower block (never grabbed) was knocked out of place
 
 const ui = createUi({
   onSelect: (i) => {
@@ -224,6 +233,8 @@ function loadLevel(index: number) {
   simTime = 0;
   lastMotion = 0;
   lastStats = '';
+  collapsed = false;
+  grab.entity = null;
   phase = 'playing';
 
   const [sx, sz] = level.platform.size;
@@ -299,6 +310,8 @@ function loadLevel(index: number) {
       exploding: false,
       hitsLeft: def.hits ?? 1,
       lastHit: -1,
+      startPos: new THREE.Vector3(x, y + top, z),
+      grabbedOnce: false,
     };
     blocks.push(entity);
     colliderOwner.set(collider.handle, entity);
@@ -509,6 +522,7 @@ function popupFor(e: BlockEntity) {
 }
 
 function stepPhysics() {
+  applyGrabForce();
   world.step(events);
   simTime += STEP;
   handleImpacts();
@@ -521,11 +535,20 @@ function stepPhysics() {
   }
 
   const fallY = level.platform.top - FALL_MARGIN;
-  let moving = pendingBlasts.length > 0;
+  let moving = pendingBlasts.length > 0 || grab.entity !== null; // holding a block is never "settled"
   let allAsleep = true;
+  const jenga = level.goal.type === 'jenga';
   for (const e of blocks) {
     if (e.status === 'removed' || !BLOCKS[e.type].mobile) continue;
     capture(e);
+    if (jenga) {
+      const moved = e.currPos.distanceTo(e.startPos);
+      if (e.grabbedOnce) {
+        if (e.status !== 'pulled' && grab.entity !== e && moved > PULL_DISTANCE) e.status = 'pulled';
+      } else if (moved > COLLAPSE_DISTANCE) {
+        collapsed = true;
+      }
+    }
     if (e.status === 'alive' && e.currPos.y < fallY) {
       e.status = 'fallen';
       popupFor(e);
@@ -552,14 +575,15 @@ function stepPhysics() {
   if (moving) lastMotion = simTime;
 
   refreshStats();
-  if (phase === 'playing' && throwsUsed > 0 && isSettled(simTime - lastMotion, allAsleep && !moving)) {
-    finishIfDone();
-  }
+  if (phase !== 'playing') return;
+  // a fallen tower is final, so it ends the level without waiting for the scene to settle
+  const settled = throwsUsed > 0 && isSettled(simTime - lastMotion, allAsleep && !moving);
+  if (settled || (jenga && collapsed)) finishIfDone();
 }
 
 function finishIfDone() {
   const states = blockStates();
-  const result = outcome(level.goal, states, throwsLeft());
+  const result = outcome(level.goal, states, throwsLeft(), collapsed);
   if (result === 'playing') return;
   phase = result;
   if (result === 'won') {
@@ -568,7 +592,14 @@ function finishIfDone() {
     const saved = recordResult(level.id, score, medal);
     ui.showResult({ won: true, score, medal, best: saved.best, hasNext: levelIndex < levels.length - 1 });
   } else {
-    ui.showResult({ won: false, score: 0, medal: null, best: 0, hasNext: false });
+    ui.showResult({
+      won: false,
+      score: 0,
+      medal: null,
+      best: 0,
+      hasNext: false,
+      lostReason: collapsed ? 'The tower fell!' : undefined,
+    });
   }
 }
 
@@ -586,21 +617,99 @@ function canThrow() {
   return phase === 'playing' && throwsLeft() > 0;
 }
 
+function isGrabTool() {
+  return TOOLS[level.tool].grab === true;
+}
+
 // last known pointer position, for the aim preview (mouse hover or active throw)
 const aim = { x: 0, y: 0, visible: false };
+
+// ---------- grab: pick a block and drag it on a soft spring ----------
+const grab = {
+  entity: null as BlockEntity | null,
+  local: new THREE.Vector3(), // grip point in the block's local space
+  planeY: 0, // the pointer drags the grip along this horizontal plane, so pulling toward the camera works
+};
+const grabPoint = new THREE.Vector3();
+const grabTarget = new THREE.Vector3();
+const grabAccel = new THREE.Vector3();
+const gripRot = new THREE.Quaternion();
+
+/** The mobile block under a screen point, and where the ray hits it. */
+function pickBlock(px: number, py: number): { entity: BlockEntity; point: THREE.Vector3 } | null {
+  ndc.set((px / innerWidth) * 2 - 1, -(py / innerHeight) * 2 + 1);
+  raycaster.setFromCamera(ndc, camera);
+  const ray = raycaster.ray;
+  const hit = world.castRay(new RAPIER.Ray(ray.origin, ray.direction), 200, true);
+  const owner = hit ? colliderOwner.get(hit.collider.handle) : undefined;
+  if (!hit || !owner || !('type' in owner) || !BLOCKS[owner.type].mobile) return null;
+  return { entity: owner, point: ray.direction.clone().multiplyScalar(hit.timeOfImpact).add(ray.origin) };
+}
+
+function beginGrab(px: number, py: number): boolean {
+  const pick = pickBlock(px, py);
+  if (!pick) return false;
+  grab.planeY = pick.point.y;
+  grabTarget.copy(pick.point);
+  grab.local
+    .copy(pick.point)
+    .sub(pick.entity.currPos)
+    .applyQuaternion(gripRot.copy(pick.entity.currRot).invert());
+  grab.entity = pick.entity;
+  pick.entity.grabbedOnce = true;
+  throwsUsed++; // each pick-up uses one grab
+  lastMotion = simTime;
+  refreshStats();
+  return true;
+}
+
+/** Accelerate the held block toward the pointer; capped, so yanking too hard wobbles the stack. */
+function applyGrabForce() {
+  const e = grab.entity;
+  if (!e) return;
+  if (e.status === 'removed') {
+    grab.entity = null;
+    return;
+  }
+  ndc.set((aim.x / innerWidth) * 2 - 1, -(aim.y / innerHeight) * 2 + 1);
+  raycaster.setFromCamera(ndc, camera);
+  const ray = raycaster.ray;
+  // intersect the pointer ray with the grip plane; a ray that never reaches it keeps the last target
+  if (ray.direction.y < -0.02) {
+    const t = Math.min((grab.planeY - ray.origin.y) / ray.direction.y, 80);
+    grabTarget.copy(ray.direction).multiplyScalar(t).add(ray.origin);
+  }
+
+  const r = e.body.rotation();
+  const t = e.body.translation();
+  const v = e.body.linvel();
+  grabPoint
+    .copy(grab.local)
+    .applyQuaternion(gripRot.set(r.x, r.y, r.z, r.w))
+    .add(t as THREE.Vector3);
+  grabAccel.copy(grabTarget).sub(grabPoint).multiplyScalar(params.grabStiffness);
+  grabAccel.x -= v.x * params.grabDamping;
+  grabAccel.y -= v.y * params.grabDamping;
+  grabAccel.z -= v.z * params.grabDamping;
+  grabAccel.clampLength(0, params.grabMaxAccel);
+  grabAccel.y += params.gravity * 0.95; // carry most of the weight so the block can be lifted out
+  e.body.applyImpulseAtPoint(grabAccel.multiplyScalar(e.body.mass() * STEP), grabPoint, true);
+}
 
 canvas.addEventListener('pointerdown', (ev) => {
   if (ev.pointerType === 'touch') {
     activeTouches.add(ev.pointerId);
     if (activeTouches.size > 1) {
       throwPointer = null; // second finger = orbit/pinch, cancel the throw
+      grab.entity = null;
       return;
     }
   }
   if (ev.button !== 0 || throwPointer !== null || !canThrow()) return;
-  throwPointer = ev.pointerId;
   aim.x = ev.clientX;
   aim.y = ev.clientY;
+  if (isGrabTool() && !beginGrab(ev.clientX, ev.clientY)) return;
+  throwPointer = ev.pointerId;
   aim.visible = true;
   samples = [{ t: ev.timeStamp, x: ev.clientX, y: ev.clientY }];
   canvas.setPointerCapture(ev.pointerId);
@@ -626,6 +735,10 @@ function endPointer(ev: PointerEvent, doThrow: boolean) {
   if (ev.pointerId !== throwPointer) return;
   throwPointer = null;
   if (ev.pointerType !== 'mouse') aim.visible = false;
+  if (grab.entity) {
+    grab.entity = null; // let go
+    return;
+  }
   if (!doThrow) return;
   samples.push({ t: ev.timeStamp, x: ev.clientX, y: ev.clientY });
   const flick = releaseVelocity(samples);
@@ -684,7 +797,7 @@ function computeShot(px: number, py: number, flickSpeed: number) {
 }
 
 function launch(px: number, py: number, flickSpeed: number) {
-  if (!canThrow()) return;
+  if (!canThrow() || isGrabTool()) return;
   const s = computeShot(px, py, flickSpeed);
   spawnBall(s.origin, s.velocity);
   throwsUsed++;
@@ -719,7 +832,22 @@ arc.frustumCulled = false;
 arc.visible = false;
 scene.add(arc);
 
+function updateGrabPreview() {
+  arc.visible = false;
+  // highlight the block that would be picked up; hide while holding one
+  const pick = aim.visible && canThrow() && !grab.entity ? pickBlock(aim.x, aim.y) : null;
+  ring.visible = pick !== null;
+  if (!pick) return;
+  ring.position.copy(pick.point);
+  ring.lookAt(camera.position);
+  (ring.material as THREE.MeshBasicMaterial).color.setHex(tierColors[0]);
+}
+
 function updateAimPreview(now: number) {
+  if (isGrabTool()) {
+    updateGrabPreview();
+    return;
+  }
   const pressing = throwPointer !== null;
   const show = aim.visible && canThrow();
   ring.visible = arc.visible = show;
@@ -767,6 +895,10 @@ flick.add(params, 'flickLight', 100, 4000);
 flick.add(params, 'flickMedium', 500, 8000);
 flick.add(params, 'flickFull', 1000, 15000);
 gui.add(params, 'upwardBias', 0, 0.3);
+const grabGui = gui.addFolder('Grab spring');
+grabGui.add(params, 'grabStiffness', 5, 200);
+grabGui.add(params, 'grabDamping', 1, 40);
+grabGui.add(params, 'grabMaxAccel', 5, 100);
 gui
   .add(params, 'solverIterations', 1, 30, 1)
   .onChange((n: number) => (world.integrationParameters.numSolverIterations = n));
@@ -815,5 +947,14 @@ requestAnimationFrame(frame);
   awake: () =>
     blocks.filter((e) => e.status !== 'removed' && BLOCKS[e.type].mobile && !e.body.isSleeping()).length,
   launch,
+  grabAt: (px: number, py: number) => {
+    aim.x = px;
+    aim.y = py;
+    return isGrabTool() && beginGrab(px, py);
+  },
+  release: () => {
+    grab.entity = null;
+  },
+  holding: () => grab.entity?.type ?? null,
   aim,
 };

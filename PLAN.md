@@ -214,7 +214,7 @@ flowchart TD
 - [x] 10 levels; Vitest tests for scoring and goal rules
 
 **Phase 2 — Depth and juice**
-- [ ] Grab tool: raycast pick + spring to kinematic cursor anchor; Jenga goal type
+- [x] Grab tool: raycast pick + spring to kinematic cursor anchor; Jenga goal type
 - [x] Blocks: wood, steel, chemical, penalty, ice, multi-hit vanish
 - [ ] Multiplier zones
 - [x] Tools: heavy ball, bomb ball, bouncy ball

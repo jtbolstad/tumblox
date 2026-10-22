@@ -8,6 +8,8 @@ export const goalSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('toppleGems') }),
   z.object({ type: z.literal('scoreTarget'), target: z.number().positive() }),
   z.object({ type: z.literal('clearBoard') }),
+  /** pull `remove` blocks out of the tower with the grab tool without it collapsing */
+  z.object({ type: z.literal('jenga'), remove: z.number().int().positive() }),
 ]);
 
 export const levelSchema = z.object({

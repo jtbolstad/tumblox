@@ -1,7 +1,8 @@
 import { BLOCKS, type BlockType } from './blocks';
 import type { Goal } from './level';
 
-export type BlockStatus = 'alive' | 'fallen' | 'removed';
+/** pulled: a block the player dragged clear of a Jenga tower. */
+export type BlockStatus = 'alive' | 'fallen' | 'removed' | 'pulled';
 export type Medal = 'bronze' | 'silver' | 'gold';
 
 export interface BlockState {
@@ -29,6 +30,8 @@ export function goalMet(goal: Goal, blocks: readonly BlockState[]): boolean {
       return blockScore(blocks) >= goal.target;
     case 'clearBoard':
       return blocks.filter((b) => BLOCKS[b.type].mobile).every((b) => b.status !== 'alive');
+    case 'jenga':
+      return blocks.filter((b) => b.status === 'pulled').length >= goal.remove;
   }
 }
 
@@ -59,9 +62,15 @@ export type Outcome = 'playing' | 'won' | 'lost';
 
 /**
  * Decide the level result. Only call once the scene has settled and at least one throw is used;
- * evaluating mid-collapse would award wins too early.
+ * evaluating mid-collapse would award wins too early. A collapsed Jenga tower is lost at once.
  */
-export function outcome(goal: Goal, blocks: readonly BlockState[], throwsLeft: number): Outcome {
+export function outcome(
+  goal: Goal,
+  blocks: readonly BlockState[],
+  throwsLeft: number,
+  collapsed = false,
+): Outcome {
+  if (goal.type === 'jenga' && collapsed) return 'lost';
   if (goalMet(goal, blocks)) return 'won';
   return throwsLeft <= 0 ? 'lost' : 'playing';
 }

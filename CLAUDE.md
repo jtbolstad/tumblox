@@ -30,4 +30,4 @@ Full research, game design and phased plan: see `PLAN.md`. Work through it phase
 
 ## Current status
 
-Phase 0 and 1 done; throw tuned for mouse (phone test over LAN still pending). Phase 2 started: 12 block types (`src/blocks.ts`), 4 tools (`src/tools.ts`), score pop-ups, 16 levels in `src/levels/` (generated once, now hand-editable JSON). Not yet: grab tool + Jenga goal, multiplier zones, Explore/Adventure sets, audio/particles/slow-mo, playtest tuning of difficulty and medal thresholds.
+Phase 0 and 1 done; throw tuned for mouse (phone test over LAN still pending). Phase 2 started: 12 block types (`src/blocks.ts`), 5 tools incl. grab + Jenga goal (`src/tools.ts`), score pop-ups, 18 levels in `src/levels/` (generated once, now hand-editable JSON). Not yet: multiplier zones, Explore/Adventure sets, audio/particles/slow-mo, playtest tuning of difficulty and medal thresholds.

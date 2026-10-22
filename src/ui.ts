@@ -19,6 +19,8 @@ export function goalText(goal: Goal): string {
       return `Score ${goal.target}`;
     case 'clearBoard':
       return 'Clear the board';
+    case 'jenga':
+      return `Pull out ${goal.remove} blocks`;
   }
 }
 
@@ -66,6 +68,7 @@ export function createUi(handlers: UiHandlers) {
     setLevel(level: Level) {
       el('level-name').textContent = level.name;
       el('goal').textContent = `${goalText(level.goal)} · ${TOOLS[level.tool].name}`;
+      el('throws-label').textContent = TOOLS[level.tool].grab ? 'Grabs' : 'Throws';
       result.hidden = true;
     },
     /** Floating score text at a screen position; removes itself when its animation ends. */
@@ -82,8 +85,16 @@ export function createUi(handlers: UiHandlers) {
       el('throws').textContent = String(throwsLeft);
       el('score').textContent = String(score);
     },
-    showResult(opts: { won: boolean; score: number; medal: Medal | null; best: number; hasNext: boolean }) {
-      el('result-title').textContent = opts.won ? 'Level cleared!' : 'Out of throws';
+    showResult(opts: {
+      won: boolean;
+      score: number;
+      medal: Medal | null;
+      best: number;
+      hasNext: boolean;
+      /** shown instead of "Out of throws" when the level was lost another way */
+      lostReason?: string;
+    }) {
+      el('result-title').textContent = opts.won ? 'Level cleared!' : (opts.lostReason ?? 'Out of throws');
       const medal = el('result-medal');
       medal.textContent = opts.won ? (opts.medal ? MEDAL_ICON[opts.medal] : 'No medal') : '';
       el('result-detail').textContent = opts.won

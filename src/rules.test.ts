@@ -105,10 +105,25 @@ describe('level schema', () => {
 describe('bundled levels', () => {
   it('all parse, have unique ids and a reachable goal', () => {
     const levels = loadBundledLevels();
-    expect(levels.length).toBe(16);
+    expect(levels.length).toBe(18);
     expect(new Set(levels.map((l) => l.id)).size).toBe(levels.length);
     for (const l of levels) {
       if (l.goal.type === 'toppleGems') expect(l.blocks.some((b) => b.type === 'gem')).toBe(true);
     }
+  });
+});
+
+describe('jenga goal', () => {
+  const goal = { type: 'jenga', remove: 2 } as const;
+
+  it('needs enough pulled blocks', () => {
+    expect(goalMet(goal, [b('wood', 'pulled'), b('wood')])).toBe(false);
+    expect(goalMet(goal, [b('wood', 'pulled'), b('wood', 'pulled'), b('wood')])).toBe(true);
+  });
+
+  it('is lost the moment the tower collapses, even with enough pulled', () => {
+    const done = [b('wood', 'pulled'), b('wood', 'pulled')];
+    expect(outcome(goal, done, 3, true)).toBe('lost');
+    expect(outcome(goal, done, 3, false)).toBe('won');
   });
 });

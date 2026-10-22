@@ -41,7 +41,7 @@ const base = { density: 1, friction: 0.7, restitution: 0.05, mobile: true, point
 
 export const BLOCKS: Record<BlockType, BlockDef> = {
   normal: { ...base, color: 0xe9c46a },
-  wood: { ...base, color: 0xa47148, density: 0.5, friction: 0.6 },
+  wood: { ...base, color: 0xa47148, density: 0.5, friction: 0.4 },
   steel: { ...base, color: 0x8d99ae, density: 4, friction: 0.5 },
   ice: { ...base, color: 0xbde0fe, density: 0.9, friction: 0.03 },
   immobile: { ...base, color: 0x4a4e57, friction: 0.8, mobile: false },
