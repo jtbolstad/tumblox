@@ -2,7 +2,19 @@ import RAPIER from '@dimforge/rapier3d-compat';
 import GUI from 'lil-gui';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
+import {
+  type ImpactKind,
+  isMuted,
+  playBoom,
+  playImpact,
+  playResult,
+  playScore,
+  playVanish,
+  setMuted,
+  unlockAudio,
+} from './audio';
 import { BLOCKS, type BlockType } from './blocks';
+import { disposeMesh, makeZoneMesh, Particles, Shake } from './fx';
 import { type Level, loadBundledLevels } from './level';
 import { loadProgress, recordResult } from './progress';
 import {
@@ -13,6 +25,7 @@ import {
   isSettled,
   medalFor,
   outcome,
+  zoneMultiplier,
 } from './rules';
 import { type PointerSample, powerTier, releaseVelocity } from './throw';
 import { TOOL_IDS, TOOLS, type ToolId } from './tools';
@@ -71,6 +84,7 @@ interface BlockEntity extends Entity {
   exploding: boolean;
   hitsLeft: number; // vanish blocks: hard hits remaining
   lastHit: number; // sim time of the last counted hit, so one impact is not counted per contact
+  multiplier: number; // zone multiplier at its current floor position
   startPos: THREE.Vector3; // where the level placed it, to measure Jenga pulls and collapse
   grabbedOnce: boolean;
 }
@@ -152,6 +166,9 @@ const colliderOwner = new Map<number, BlockEntity | BallEntity>();
 const blockMeshes: THREE.InstancedMesh[] = [];
 let platformCollider: RAPIER.Collider | null = null;
 let platformMesh: THREE.Mesh | null = null;
+const zoneMeshes: THREE.Mesh[] = [];
+const particles = new Particles(scene);
+const shake = new Shake();
 
 const boxGeo = new THREE.BoxGeometry(1, 1, 1);
 const hiddenMatrix = new THREE.Matrix4().makeScale(0, 0, 0);
@@ -189,7 +206,7 @@ const ui = createUi({
 });
 
 function blockStates(): BlockState[] {
-  return blocks.map((b) => ({ type: b.type, status: b.status }));
+  return blocks.map((b) => ({ type: b.type, status: b.status, multiplier: b.multiplier }));
 }
 
 function throwsLeft() {
@@ -223,6 +240,10 @@ function clearLevel() {
     scene.remove(platformMesh);
     platformMesh.geometry.dispose();
   }
+  for (const z of zoneMeshes) {
+    scene.remove(z);
+    disposeMesh(z);
+  }
 }
 
 function loadLevel(index: number) {
@@ -252,6 +273,12 @@ function loadLevel(index: number) {
   platformMesh.receiveShadow = true;
   platformMesh.castShadow = true;
   scene.add(platformMesh);
+  zoneMeshes.length = 0;
+  for (const zone of level.zones) {
+    const mesh = makeZoneMesh(zone);
+    scene.add(mesh);
+    zoneMeshes.push(mesh);
+  }
 
   // one InstancedMesh per block type used by this level
   const counts = new Map<BlockType, number>();
@@ -310,6 +337,7 @@ function loadLevel(index: number) {
       exploding: false,
       hitsLeft: def.hits ?? 1,
       lastHit: -1,
+      multiplier: 1,
       startPos: new THREE.Vector3(x, y + top, z),
       grabbedOnce: false,
     };
@@ -406,6 +434,10 @@ const blastDir = new THREE.Vector3();
 
 function detonate(source: Blaster) {
   blastCenter.copy(source.currPos);
+  particles.burst(blastCenter, 0xffa94d, 40, 9);
+  particles.burst(blastCenter, 0xe63946, 20, 6);
+  shake.kick(0.35);
+  playBoom();
   if ('type' in source) {
     removeBlock(source);
   } else {
@@ -435,19 +467,33 @@ function bodySpeed(handle: number): number {
   return Math.hypot(v.x, v.y, v.z);
 }
 
+const IMPACT_BY_TYPE: Partial<Record<BlockType, ImpactKind>> = {
+  wood: 'wood',
+  steel: 'metal',
+  gem: 'glass',
+  ice: 'glass',
+};
+
+function impactKind(a: Blaster | undefined, b: Blaster | undefined): ImpactKind {
+  for (const e of [a, b])
+    if (e && 'type' in e && IMPACT_BY_TYPE[e.type]) return IMPACT_BY_TYPE[e.type] as ImpactKind;
+  return 'thud';
+}
+
 function handleImpacts() {
   const toVanish = new Set<BlockEntity>();
   events.drainCollisionEvents((h1, h2, started) => {
     if (!started) return;
     const a = colliderOwner.get(h1);
     const b = colliderOwner.get(h2);
+    // post-solve speed of the faster body; resting contacts stay far below the thresholds
+    const speed = Math.max(bodySpeed(h1), bodySpeed(h2));
+    if (speed >= 1.5) playImpact(impactKind(a, b), speed);
     const blocksHit = [a, b].filter(
       (e): e is BlockEntity => !!e && 'type' in e && !!BLOCKS[e.type].behaviour,
     );
     const bombBall = [a, b].find((e): e is BallEntity => !!e && 'tool' in e && !!TOOLS[e.tool].explodes);
     if (blocksHit.length === 0 && !bombBall) return;
-    // post-solve speed of the faster body; resting contacts stay far below the thresholds
-    const speed = Math.max(bodySpeed(h1), bodySpeed(h2));
     if (bombBall && speed >= BOMB_BALL_TRIGGER_SPEED) scheduleBlast(bombBall, 0);
     for (const e of blocksHit) {
       const def = BLOCKS[e.type];
@@ -466,7 +512,11 @@ function handleImpacts() {
       }
     }
   });
-  for (const e of toVanish) removeBlock(e);
+  for (const e of toVanish) {
+    particles.burst(e.currPos, BLOCKS[e.type].color, 14, 4);
+    playVanish();
+    removeBlock(e);
+  }
 }
 
 // ---------- fixed step + interpolation ----------
@@ -513,6 +563,8 @@ function popupFor(e: BlockEntity) {
   popupPos.y = Math.max(popupPos.y, level.platform.top) + 0.8; // above the block, not under the ground
   popupPos.project(camera);
   if (popupPos.z > 1) return; // behind the camera
+  particles.burst(e.currPos, BLOCKS[e.type].color, 10, 4);
+  playScore();
   ui.popup(
     `${points > 0 ? '+' : ''}${points}`,
     ((popupPos.x + 1) / 2) * innerWidth,
@@ -553,6 +605,10 @@ function stepPhysics() {
       e.status = 'fallen';
       popupFor(e);
     }
+    // zones count where the block comes to rest on the floor, so keep updating while it slides
+    if (e.status === 'fallen' && level.zones.length > 0 && e.currPos.y < 1) {
+      e.multiplier = zoneMultiplier(level.zones, e.currPos.x, e.currPos.z);
+    }
     if (!e.body.isSleeping()) {
       allAsleep = false;
       if (speedOf(e.body) > 0.1) moving = true;
@@ -590,8 +646,10 @@ function finishIfDone() {
     const score = finalScore(states, throwsLeft());
     const medal = medalFor(score, level.medals);
     const saved = recordResult(level.id, score, medal);
+    playResult(true);
     ui.showResult({ won: true, score, medal, best: saved.best, hasNext: levelIndex < levels.length - 1 });
   } else {
+    playResult(false);
     ui.showResult({
       won: false,
       score: 0,
@@ -696,7 +754,19 @@ function applyGrabForce() {
   e.body.applyImpulseAtPoint(grabAccel.multiplyScalar(e.body.mass() * STEP), grabPoint, true);
 }
 
+const muteBtn = document.getElementById('mute-btn') as HTMLElement;
+function showMute() {
+  muteBtn.textContent = isMuted() ? '🔇' : '🔊';
+}
+showMute();
+muteBtn.addEventListener('click', () => {
+  setMuted(!isMuted());
+  showMute();
+  unlockAudio();
+});
+
 canvas.addEventListener('pointerdown', (ev) => {
+  unlockAudio(); // browsers start audio only after a user gesture
   if (ev.pointerType === 'touch') {
     activeTouches.add(ev.pointerId);
     if (activeTouches.size > 1) {
@@ -913,7 +983,8 @@ ui.showMenu(levels, loadProgress());
 let last = performance.now();
 let acc = 0;
 function frame(now: number) {
-  acc += Math.min((now - last) / 1000, 0.25);
+  const dt = Math.min((now - last) / 1000, 0.25);
+  acc += dt;
   last = now;
   let steps = 0;
   while (acc >= STEP && steps < MAX_STEPS_PER_FRAME) {
@@ -925,7 +996,11 @@ function frame(now: number) {
   syncRender(acc / STEP);
   controls.update();
   updateAimPreview(now);
+  particles.update(dt, params.gravity);
+  shake.update(dt);
+  camera.position.add(shake.offset); // shake only the rendered frame, not the orbit state
   renderer.render(scene, camera);
+  camera.position.sub(shake.offset);
   requestAnimationFrame(frame);
 }
 requestAnimationFrame(frame);

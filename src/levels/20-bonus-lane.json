@@ -1,0 +1,84 @@
+{
+  "id": "bonus-lane",
+  "name": "Bonus Lane",
+  "theme": "meadow",
+  "tool": "ball",
+  "throws": 3,
+  "goal": {
+    "type": "toppleGems"
+  },
+  "medals": {
+    "bronze": 200,
+    "silver": 350,
+    "gold": 500
+  },
+  "platform": {
+    "size": [4, 4],
+    "top": 1
+  },
+  "zones": [
+    {
+      "multiplier": 2,
+      "pos": [0, 0, -5],
+      "size": [6, 6]
+    }
+  ],
+  "blocks": [
+    {
+      "type": "normal",
+      "pos": [-0.5, 0.5, -0.5]
+    },
+    {
+      "type": "normal",
+      "pos": [-0.5, 0.5, 0.5]
+    },
+    {
+      "type": "normal",
+      "pos": [0.5, 0.5, -0.5]
+    },
+    {
+      "type": "normal",
+      "pos": [0.5, 0.5, 0.5]
+    },
+    {
+      "type": "normal",
+      "pos": [-0.5, 1.5, -0.5]
+    },
+    {
+      "type": "normal",
+      "pos": [-0.5, 1.5, 0.5]
+    },
+    {
+      "type": "normal",
+      "pos": [0.5, 1.5, -0.5]
+    },
+    {
+      "type": "normal",
+      "pos": [0.5, 1.5, 0.5]
+    },
+    {
+      "type": "normal",
+      "pos": [-0.5, 2.5, -0.5]
+    },
+    {
+      "type": "normal",
+      "pos": [-0.5, 2.5, 0.5]
+    },
+    {
+      "type": "normal",
+      "pos": [0.5, 2.5, -0.5]
+    },
+    {
+      "type": "normal",
+      "pos": [0.5, 2.5, 0.5]
+    },
+    {
+      "type": "gem",
+      "pos": [-0.5, 3.5, -0.5]
+    },
+    {
+      "type": "gem",
+      "pos": [0.5, 3.5, -0.5]
+    }
+  ]
+}

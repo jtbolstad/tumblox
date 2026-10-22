@@ -8,14 +8,36 @@ export type Medal = 'bronze' | 'silver' | 'gold';
 export interface BlockState {
   type: BlockType;
   status: BlockStatus;
+  /** score multiplier of the floor zone the block ended up in (default 1) */
+  multiplier?: number;
 }
 
 export const UNUSED_THROW_BONUS = 50;
 
+/** Multiplier of the best zone containing floor point (x, z); 1 when outside every zone. */
+export function zoneMultiplier(
+  zones: readonly { multiplier: number; pos: readonly number[]; size: readonly number[] }[],
+  x: number,
+  z: number,
+): number {
+  let best = 1;
+  for (const zone of zones) {
+    const inside =
+      Math.abs(x - zone.pos[0]) <= zone.size[0] / 2 && Math.abs(z - zone.pos[2]) <= zone.size[1] / 2;
+    if (inside) best = Math.max(best, zone.multiplier);
+  }
+  return best;
+}
+
 /** Points from blocks that have fallen off the platform. */
 export function blockScore(blocks: readonly BlockState[]): number {
   let total = 0;
-  for (const b of blocks) if (b.status === 'fallen') total += BLOCKS[b.type].points;
+  for (const b of blocks) {
+    if (b.status !== 'fallen') continue;
+    const points = BLOCKS[b.type].points;
+    // multiplier zones only boost gains; a penalty block costs the same wherever it lands
+    total += points > 0 ? points * (b.multiplier ?? 1) : points;
+  }
   return total;
 }
 

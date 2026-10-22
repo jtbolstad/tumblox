@@ -29,6 +29,16 @@ export const levelSchema = z.object({
       size: [6, 6],
       top: 1,
     }),
+  /** floor areas that multiply points of blocks that come to rest in them (pos y ignored) */
+  zones: z
+    .array(
+      z.object({
+        multiplier: z.number().min(2),
+        pos: vec3,
+        size: z.tuple([z.number().positive(), z.number().positive()]),
+      }),
+    )
+    .default([]),
   blocks: z
     .array(
       z.object({

@@ -11,6 +11,7 @@ import {
   isSettled,
   medalFor,
   outcome,
+  zoneMultiplier,
 } from './rules';
 
 const b = (type: BlockType, status: BlockStatus = 'alive'): BlockState => ({ type, status });
@@ -105,7 +106,7 @@ describe('level schema', () => {
 describe('bundled levels', () => {
   it('all parse, have unique ids and a reachable goal', () => {
     const levels = loadBundledLevels();
-    expect(levels.length).toBe(18);
+    expect(levels.length).toBe(20);
     expect(new Set(levels.map((l) => l.id)).size).toBe(levels.length);
     for (const l of levels) {
       if (l.goal.type === 'toppleGems') expect(l.blocks.some((b) => b.type === 'gem')).toBe(true);
@@ -125,5 +126,24 @@ describe('jenga goal', () => {
     const done = [b('wood', 'pulled'), b('wood', 'pulled')];
     expect(outcome(goal, done, 3, true)).toBe('lost');
     expect(outcome(goal, done, 3, false)).toBe('won');
+  });
+});
+
+describe('multiplier zones', () => {
+  const zones = [
+    { multiplier: 2, pos: [0, 0, -4], size: [4, 2] },
+    { multiplier: 3, pos: [0, 0, -4], size: [1, 1] },
+  ];
+
+  it('picks the best zone containing the point, else 1', () => {
+    expect(zoneMultiplier(zones, 1.5, -4)).toBe(2);
+    expect(zoneMultiplier(zones, 0, -4)).toBe(3);
+    expect(zoneMultiplier(zones, 5, -4)).toBe(1);
+  });
+
+  it('multiplies gains but not penalties', () => {
+    expect(blockScore([{ type: 'point', status: 'fallen', multiplier: 3 }])).toBe(300);
+    expect(blockScore([{ type: 'penalty', status: 'fallen', multiplier: 3 }])).toBe(-100);
+    expect(blockScore([{ type: 'point', status: 'alive', multiplier: 3 }])).toBe(0);
   });
 });

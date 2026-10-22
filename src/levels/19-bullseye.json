@@ -1,0 +1,70 @@
+{
+  "id": "bullseye",
+  "name": "Bullseye",
+  "theme": "meadow",
+  "tool": "ball",
+  "throws": 3,
+  "goal": {
+    "type": "scoreTarget",
+    "target": 400
+  },
+  "medals": {
+    "bronze": 400,
+    "silver": 550,
+    "gold": 700
+  },
+  "platform": {
+    "size": [4, 4],
+    "top": 1
+  },
+  "zones": [
+    {
+      "multiplier": 2,
+      "pos": [0, 0, -4],
+      "size": [5, 3]
+    },
+    {
+      "multiplier": 3,
+      "pos": [0, 0, -7.5],
+      "size": [5, 3]
+    }
+  ],
+  "blocks": [
+    {
+      "type": "normal",
+      "pos": [-1, 0.5, 0]
+    },
+    {
+      "type": "normal",
+      "pos": [0, 0.5, 0]
+    },
+    {
+      "type": "normal",
+      "pos": [1, 0.5, 0]
+    },
+    {
+      "type": "normal",
+      "pos": [-1, 1.5, 0]
+    },
+    {
+      "type": "point",
+      "pos": [0, 1.5, 0]
+    },
+    {
+      "type": "normal",
+      "pos": [1, 1.5, 0]
+    },
+    {
+      "type": "point",
+      "pos": [-1, 2.5, 0]
+    },
+    {
+      "type": "point",
+      "pos": [0, 2.5, 0]
+    },
+    {
+      "type": "point",
+      "pos": [1, 2.5, 0]
+    }
+  ]
+}

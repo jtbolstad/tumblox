@@ -216,10 +216,11 @@ flowchart TD
 **Phase 2 — Depth and juice**
 - [x] Grab tool: raycast pick + spring to kinematic cursor anchor; Jenga goal type
 - [x] Blocks: wood, steel, chemical, penalty, ice, multi-hit vanish
-- [ ] Multiplier zones
+- [x] Multiplier zones
 - [x] Tools: heavy ball, bomb ball, bouncy ball
 - [ ] Explore tutorial sets (6) and 2 themed Adventure worlds (~24 levels)
-- [ ] Audio (impact sounds by material and speed, music), particles, camera shake, slow-mo on chains
+- [x] Impact sounds by material and speed (synthesised), particles, camera shake
+- [ ] Music, slow-mo on chain reactions
 - [ ] Playtest round; tune difficulty and medal thresholds
 
 **Phase 3 — Editor and sharing**
