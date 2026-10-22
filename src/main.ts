@@ -1,8 +1,8 @@
-import * as THREE from 'three';
-import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import RAPIER from '@dimforge/rapier3d-compat';
 import GUI from 'lil-gui';
-import { PointerSample, powerTier, releaseVelocity } from './throw';
+import * as THREE from 'three';
+import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
+import { type PointerSample, powerTier, releaseVelocity } from './throw';
 
 const STEP = 1 / 60;
 const MAX_STEPS_PER_FRAME = 5;
@@ -34,8 +34,14 @@ interface Entity {
   currPos: THREE.Vector3;
   prevRot: THREE.Quaternion;
   currRot: THREE.Quaternion;
-  mesh?: THREE.Mesh; // balls
-  instance?: number; // blocks: index into InstancedMesh
+}
+
+interface BlockEntity extends Entity {
+  instance: number; // index into the InstancedMesh
+}
+
+interface BallEntity extends Entity {
+  mesh: THREE.Mesh;
 }
 
 await RAPIER.init();
@@ -97,8 +103,8 @@ world.integrationParameters.numSolverIterations = params.solverIterations;
 
 world.createCollider(RAPIER.ColliderDesc.cuboid(60, 0.5, 60).setTranslation(0, -0.5, 0).setFriction(0.9));
 
-const blockEntities: Entity[] = [];
-const balls: Entity[] = [];
+const blockEntities: BlockEntity[] = [];
+const balls: BallEntity[] = [];
 const blockColliders: RAPIER.Collider[] = [];
 
 const TOWER_LAYERS = 5; // 5 layers x 2x2 = 20 blocks
@@ -140,7 +146,11 @@ function resetTower() {
       const y = 0.5 + layer * (1 + gap);
       // blocks spawn asleep so the stack stands still until hit
       const body = world.createRigidBody(
-        RAPIER.RigidBodyDesc.dynamic().setTranslation(x, y, z).setSleeping(true).setLinearDamping(0.05).setAngularDamping(0.1),
+        RAPIER.RigidBodyDesc.dynamic()
+          .setTranslation(x, y, z)
+          .setSleeping(true)
+          .setLinearDamping(0.05)
+          .setAngularDamping(0.1),
       );
       const col = world.createCollider(
         RAPIER.ColliderDesc.cuboid(0.5, 0.5, 0.5)
@@ -152,8 +162,7 @@ function resetTower() {
       );
       blockColliders.push(col);
       body.sleep(); // attaching the collider wakes the body, so sleep again
-      const e = makeEntity(body);
-      e.instance = i;
+      const e: BlockEntity = { ...makeEntity(body), instance: i };
       blockMesh.setColorAt(i, new THREE.Color(palette[layer % palette.length]));
       blockEntities.push(e);
       i++;
@@ -183,15 +192,16 @@ function spawnBall(origin: THREE.Vector3, velocity: THREE.Vector3) {
   mesh.scale.setScalar(r);
   mesh.castShadow = true;
   scene.add(mesh);
-  const e = makeEntity(body);
-  e.mesh = mesh;
-  balls.push(e);
-  if (balls.length > MAX_BALLS) removeBall(balls.shift()!);
+  balls.push({ ...makeEntity(body), mesh });
+  if (balls.length > MAX_BALLS) {
+    const oldest = balls.shift();
+    if (oldest) removeBall(oldest);
+  }
 }
 
-function removeBall(e: Entity) {
+function removeBall(e: BallEntity) {
   world.removeRigidBody(e.body);
-  if (e.mesh) scene.remove(e.mesh);
+  scene.remove(e.mesh);
 }
 
 // ---------- fixed step + interpolation ----------
@@ -214,12 +224,12 @@ function syncRender(alpha: number) {
     tmpPos.lerpVectors(e.prevPos, e.currPos, alpha);
     tmpRot.slerpQuaternions(e.prevRot, e.currRot, alpha);
     tmpMat.compose(tmpPos, tmpRot, unitScale);
-    blockMesh.setMatrixAt(e.instance!, tmpMat);
+    blockMesh.setMatrixAt(e.instance, tmpMat);
   }
   blockMesh.instanceMatrix.needsUpdate = true;
   for (const e of balls) {
-    e.mesh!.position.lerpVectors(e.prevPos, e.currPos, alpha);
-    e.mesh!.quaternion.slerpQuaternions(e.prevRot, e.currRot, alpha);
+    e.mesh.position.lerpVectors(e.prevPos, e.currPos, alpha);
+    e.mesh.quaternion.slerpQuaternions(e.prevRot, e.currRot, alpha);
   }
 }
 
@@ -237,8 +247,8 @@ function stepPhysics() {
 }
 
 // ---------- flick to throw ----------
-const hudThrows = document.getElementById('throws')!;
-const hudTier = document.getElementById('tier')!;
+const hudThrows = document.getElementById('throws') as HTMLElement;
+const hudTier = document.getElementById('tier') as HTMLElement;
 let throwsCount = 0;
 const tierNames = ['tap', 'light', 'medium', 'full'];
 
@@ -298,11 +308,7 @@ function launch(px: number, py: number, flickSpeed: number) {
   raycaster.setFromCamera(ndc, camera);
   const ray = raycaster.ray;
 
-  const hit = world.castRay(
-    new RAPIER.Ray(ray.origin, ray.direction),
-    200,
-    true,
-  );
+  const hit = world.castRay(new RAPIER.Ray(ray.origin, ray.direction), 200, true);
   if (hit) launchTarget.copy(ray.direction).multiplyScalar(hit.timeOfImpact).add(ray.origin);
   else launchTarget.copy(ray.direction).multiplyScalar(30).add(ray.origin);
 
@@ -339,8 +345,12 @@ flick.add(params, 'flickMedium', 200, 4000);
 flick.add(params, 'flickFull', 500, 8000);
 gui.add(params, 'upwardBias', 0, 0.3);
 const mat = gui.addFolder('Blocks');
-mat.add(params, 'blockFriction', 0, 1.5).onChange((v: number) => blockColliders.forEach((c) => c.setFriction(v)));
-mat.add(params, 'blockRestitution', 0, 1).onChange((v: number) => blockColliders.forEach((c) => c.setRestitution(v)));
+mat.add(params, 'blockFriction', 0, 1.5).onChange((v: number) => {
+  for (const c of blockColliders) c.setFriction(v);
+});
+mat.add(params, 'blockRestitution', 0, 1).onChange((v: number) => {
+  for (const c of blockColliders) c.setRestitution(v);
+});
 gui
   .add(params, 'solverIterations', 1, 30, 1)
   .onChange((n: number) => (world.integrationParameters.numSolverIterations = n));
@@ -373,7 +383,9 @@ requestAnimationFrame(frame);
 (window as unknown as { __blox: unknown }).__blox = {
   blocks: blockEntities,
   balls,
-  step: (n: number) => { for (let i = 0; i < n; i++) stepPhysics(); },
+  step: (n: number) => {
+    for (let i = 0; i < n; i++) stepPhysics();
+  },
   awake: () => blockEntities.filter((e) => !e.body.isSleeping()).length,
   launch,
 };
