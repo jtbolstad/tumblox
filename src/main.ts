@@ -267,20 +267,36 @@ canvas.addEventListener('pointerdown', (ev) => {
   }
   if (ev.button !== 0 || throwPointer !== null) return;
   throwPointer = ev.pointerId;
+  aim.x = ev.clientX;
+  aim.y = ev.clientY;
+  aim.visible = true;
   samples = [{ t: ev.timeStamp, x: ev.clientX, y: ev.clientY }];
   canvas.setPointerCapture(ev.pointerId);
 });
 
+// last known pointer position, for the aim preview (mouse hover or active throw)
+const aim = { x: 0, y: 0, visible: false };
+
 canvas.addEventListener('pointermove', (ev) => {
-  if (ev.pointerId !== throwPointer) return;
-  samples.push({ t: ev.timeStamp, x: ev.clientX, y: ev.clientY });
-  if (samples.length > 64) samples.shift();
+  aim.x = ev.clientX;
+  aim.y = ev.clientY;
+  if (ev.pointerId === throwPointer) {
+    samples.push({ t: ev.timeStamp, x: ev.clientX, y: ev.clientY });
+    if (samples.length > 64) samples.shift();
+  }
+  // touch has no hover: preview only while a finger is down
+  aim.visible = ev.pointerType === 'mouse' || throwPointer !== null;
+});
+
+canvas.addEventListener('pointerleave', (ev) => {
+  if (ev.pointerType === 'mouse') aim.visible = false;
 });
 
 function endPointer(ev: PointerEvent, doThrow: boolean) {
   activeTouches.delete(ev.pointerId);
   if (ev.pointerId !== throwPointer) return;
   throwPointer = null;
+  if (ev.pointerType !== 'mouse') aim.visible = false;
   if (!doThrow) return;
   samples.push({ t: ev.timeStamp, x: ev.clientX, y: ev.clientY });
   const flick = releaseVelocity(samples);
@@ -303,7 +319,15 @@ const launchDir = new THREE.Vector3();
 const launchOrigin = new THREE.Vector3();
 const launchTarget = new THREE.Vector3();
 
-function launch(px: number, py: number, flickSpeed: number) {
+const shot = {
+  origin: new THREE.Vector3(),
+  velocity: new THREE.Vector3(),
+  target: new THREE.Vector3(),
+  tier: 0 as 0 | 1 | 2 | 3,
+};
+
+/** Aim at screen point (px, py) with a flick of `flickSpeed` px/s; fills and returns `shot`. */
+function computeShot(px: number, py: number, flickSpeed: number) {
   ndc.set((px / innerWidth) * 2 - 1, -(py / innerHeight) * 2 + 1);
   raycaster.setFromCamera(ndc, camera);
   const ray = raycaster.ray;
@@ -323,10 +347,76 @@ function launch(px: number, py: number, flickSpeed: number) {
 
   const tier = powerTier(flickSpeed, [params.flickLight, params.flickMedium, params.flickFull]);
   const speed = [params.speedTap, params.speedLight, params.speedMedium, params.speedFull][tier];
-  spawnBall(launchOrigin, launchDir.multiplyScalar(speed));
+  shot.origin.copy(launchOrigin);
+  shot.velocity.copy(launchDir).multiplyScalar(speed);
+  shot.target.copy(launchTarget);
+  shot.tier = tier;
+  return shot;
+}
+
+function launch(px: number, py: number, flickSpeed: number) {
+  const s = computeShot(px, py, flickSpeed);
+  spawnBall(s.origin, s.velocity);
   throwsCount++;
   hudThrows.textContent = String(throwsCount);
-  hudTier.textContent = tierNames[tier];
+  hudTier.textContent = tierNames[s.tier];
+}
+
+// ---------- aim preview: target ring + trajectory arc ----------
+const tierColors = [0xffffff, 0xffe066, 0xffa94d, 0xff5c5c];
+const ring = new THREE.Mesh(
+  new THREE.RingGeometry(0.35, 0.5, 32),
+  new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.9, depthTest: false }),
+);
+ring.renderOrder = 10;
+ring.visible = false;
+scene.add(ring);
+
+const ARC_POINTS = 48;
+const ARC_DT = 0.05;
+const arcGeo = new THREE.BufferGeometry();
+arcGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(ARC_POINTS * 3), 3));
+const arcMat = new THREE.LineBasicMaterial({
+  color: 0xffffff,
+  transparent: true,
+  opacity: 0.8,
+  depthTest: false,
+});
+const arc = new THREE.Line(arcGeo, arcMat);
+arc.renderOrder = 10;
+arc.frustumCulled = false;
+arc.visible = false;
+scene.add(arc);
+
+function updateAimPreview(now: number) {
+  const pressing = throwPointer !== null;
+  ring.visible = arc.visible = aim.visible;
+  if (!aim.visible) return;
+
+  // live flick speed includes "now", so the preview drops as the pointer slows
+  const live = pressing ? [...samples, { t: now, x: aim.x, y: aim.y }] : [];
+  const speed = pressing ? releaseVelocity(live).speed : 0;
+  const s = computeShot(aim.x, aim.y, speed);
+  hudTier.textContent = pressing ? tierNames[s.tier] : '-';
+
+  ring.position.copy(s.target);
+  ring.lookAt(camera.position);
+  const color = tierColors[s.tier];
+  (ring.material as THREE.MeshBasicMaterial).color.setHex(color);
+  arcMat.color.setHex(color);
+
+  // ballistic points; the real body also has CCD and damping 0, so this matches until first contact
+  const pos = arcGeo.getAttribute('position') as THREE.BufferAttribute;
+  let last = 0;
+  for (let i = 0; i < ARC_POINTS; i++) {
+    const t = i * ARC_DT;
+    const y = s.origin.y + s.velocity.y * t - 0.5 * params.gravity * t * t;
+    pos.setXYZ(i, s.origin.x + s.velocity.x * t, Math.max(y, 0.02), s.origin.z + s.velocity.z * t);
+    last = i;
+    if (y < 0) break; // hit the ground
+  }
+  for (let i = last + 1; i < ARC_POINTS; i++) pos.copyAt(i, pos, last); // collapse unused tail
+  pos.needsUpdate = true;
 }
 
 // ---------- debug panel ----------
@@ -374,6 +464,7 @@ function frame(now: number) {
   if (steps === MAX_STEPS_PER_FRAME) acc = 0; // spiral-of-death guard
   syncRender(acc / STEP);
   controls.update();
+  updateAimPreview(now);
   renderer.render(scene, camera);
   requestAnimationFrame(frame);
 }
@@ -388,4 +479,8 @@ requestAnimationFrame(frame);
   },
   awake: () => blockEntities.filter((e) => !e.body.isSleeping()).length,
   launch,
+  aim,
+  ring,
+  arc,
+  updateAimPreview,
 };
