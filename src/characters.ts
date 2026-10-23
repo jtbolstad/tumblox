@@ -6,14 +6,26 @@ import { box, cone, merge, type Part, p } from './props';
  * merged into three meshes (body, head, eyes) so the head can turn and the eyes can blink.
  * Kinds are data, like blocks; moods come from `moodFor`, a pure rule.
  */
-export const CHARACTER_IDS = ['goat', 'hen', 'frog', 'parrot', 'pig', 'armadillo', 'bat', 'ghost'] as const;
+export const CHARACTER_IDS = [
+  'goat',
+  'hen',
+  'frog',
+  'parrot',
+  'pig',
+  'armadillo',
+  'bat',
+  'ghost',
+  'fox',
+  'owl',
+] as const;
 export type CharacterKind = (typeof CHARACTER_IDS)[number];
 
 /** friend: must stay on the platform. rival: points for knocking it off. decor: just company. */
 export const ROLES = ['friend', 'rival', 'decor'] as const;
 export type Role = (typeof ROLES)[number];
 
-export type Mood = 'idle' | 'alert' | 'panic' | 'tumble' | 'cheer' | 'sad';
+/** wave and dance are crowd moves; level characters get the others from `moodFor`. */
+export type Mood = 'idle' | 'alert' | 'panic' | 'tumble' | 'cheer' | 'sad' | 'wave' | 'dance';
 
 export interface CharacterDef {
   name: string;
@@ -34,6 +46,8 @@ export const CHARACTERS: Record<CharacterKind, CharacterDef> = {
   armadillo: { name: 'Armadillo', size: [0.75, 0.75, 0.7], density: 0.9, voice: 0.85 },
   bat: { name: 'Bat', size: [0.6, 0.65, 0.5], density: 0.3, voice: 1.8 },
   ghost: { name: 'Ghost', size: [0.7, 0.95, 0.6], density: 0.3, voice: 0.7, translucent: true },
+  fox: { name: 'Fox', size: [0.6, 0.85, 0.6], density: 0.6, voice: 1.2 },
+  owl: { name: 'Owl', size: [0.6, 0.85, 0.55], density: 0.4, voice: 0.95 },
 };
 
 export interface MoodInput {
@@ -68,6 +82,17 @@ interface Look {
   neck: [number, number, number];
   /** eye centre relative to the neck */
   eyeAt: [number, number, number];
+  /** the right arm (or wing), hanging down from its shoulder pivot; the left one is its mirror image */
+  arm: Part[];
+  shoulder: [number, number, number];
+}
+
+/** A stubby arm with a darker hand or hoof. */
+function arm(color: number, hand: number, length = 0.24, width = 0.1): Part[] {
+  return [
+    p(box(width, length, width), color, [0, -length / 2, 0]),
+    p(box(width * 1.1, 0.05, width * 1.1), hand, [0, -length + 0.02, 0]),
+  ];
 }
 
 const INK = 0x1d2433;
@@ -104,14 +129,14 @@ const LOOKS: Record<CharacterKind, () => Look> = {
     eyes: eyes(0.1, 0.08),
     neck: [0, 0.05, 0.08],
     eyeAt: [0, 0.27, 0.2],
+    arm: arm(0xf2efe6, 0x8a8a8a),
+    shoulder: [0.36, 0.0, 0.02],
   }),
   hen: () => ({
     body: [
       p(box(0.06, 0.14, 0.06), 0xf2a33a, [-0.1, -0.33, 0]),
       p(box(0.06, 0.14, 0.06), 0xf2a33a, [0.1, -0.33, 0]),
       p(box(0.5, 0.38, 0.48), 0xfff4dc, [0, -0.07, -0.02]),
-      p(box(0.06, 0.24, 0.32), 0xf1e2c0, [-0.27, -0.06, -0.02]),
-      p(box(0.06, 0.24, 0.32), 0xf1e2c0, [0.27, -0.06, -0.02]),
       p(box(0.3, 0.26, 0.1), 0xf1e2c0, [0, 0.08, -0.27], [-0.4, 0, 0]),
     ],
     head: [
@@ -123,6 +148,8 @@ const LOOKS: Record<CharacterKind, () => Look> = {
     eyes: eyes(0.08, 0.07),
     neck: [0, 0.12, 0.08],
     eyeAt: [0, 0.2, 0.16],
+    arm: [p(box(0.06, 0.24, 0.32), 0xf1e2c0, [0.03, -0.11, 0])],
+    shoulder: [0.25, 0.05, -0.02],
   }),
   frog: () => ({
     body: [
@@ -139,14 +166,14 @@ const LOOKS: Record<CharacterKind, () => Look> = {
     eyes: eyes(0.2, 0.09),
     neck: [0, 0.03, 0],
     eyeAt: [0, 0.26, 0.21],
+    arm: arm(0x67b84a, 0x4f9a38, 0.18),
+    shoulder: [0.42, -0.02, 0.12],
   }),
   parrot: () => ({
     body: [
       p(box(0.05, 0.12, 0.05), 0x5a5a5a, [-0.08, -0.37, 0]),
       p(box(0.05, 0.12, 0.05), 0x5a5a5a, [0.08, -0.37, 0]),
       p(box(0.42, 0.42, 0.4), 0xe63946, [0, -0.1, 0]),
-      p(box(0.05, 0.32, 0.3), 0x3d7bd9, [-0.23, -0.08, -0.02]),
-      p(box(0.05, 0.32, 0.3), 0x3d7bd9, [0.23, -0.08, -0.02]),
       p(box(0.14, 0.36, 0.06), 0xffc400, [0, -0.25, -0.24], [0.5, 0, 0]),
     ],
     head: [
@@ -159,6 +186,8 @@ const LOOKS: Record<CharacterKind, () => Look> = {
     eyes: eyes(0.09, 0.06),
     neck: [0, 0.11, 0.04],
     eyeAt: [0, 0.23, 0.17],
+    arm: [p(box(0.05, 0.32, 0.3), 0x3d7bd9, [0.025, -0.15, 0])],
+    shoulder: [0.21, 0.08, -0.02],
   }),
   pig: () => ({
     body: [...legs(0.66, 0.54, -0.43, 0.12, 0xe88aa0), p(box(0.66, 0.38, 0.56), 0xf4a6b8, [0, -0.12, -0.02])],
@@ -176,6 +205,8 @@ const LOOKS: Record<CharacterKind, () => Look> = {
     eyes: eyes(0.1, 0.07),
     neck: [0, 0.05, 0.1],
     eyeAt: [0, 0.27, 0.2],
+    arm: arm(0xf4a6b8, 0xe88aa0, 0.22, 0.12),
+    shoulder: [0.39, 0.0, 0.05],
   }),
   armadillo: () => ({
     body: [
@@ -197,12 +228,12 @@ const LOOKS: Record<CharacterKind, () => Look> = {
     eyes: eyes(0.08, 0.06),
     neck: [0, 0.03, 0.22],
     eyeAt: [0, 0.18, 0.15],
+    arm: arm(0xb8a890, 0x8f8170, 0.18),
+    shoulder: [0.39, -0.04, 0.12],
   }),
   bat: () => ({
     body: [
       p(box(0.34, 0.36, 0.3), 0x4a3a66, [0, -0.12, 0]),
-      p(box(0.3, 0.26, 0.03), 0x5d4a80, [-0.3, -0.06, -0.05], [0, 0.3, 0.3]),
-      p(box(0.3, 0.26, 0.03), 0x5d4a80, [0.3, -0.06, -0.05], [0, -0.3, -0.3]),
       p(box(0.05, 0.1, 0.05), 0x2f2540, [-0.08, -0.33, 0]),
       p(box(0.05, 0.1, 0.05), 0x2f2540, [0.08, -0.33, 0]),
     ],
@@ -216,6 +247,11 @@ const LOOKS: Record<CharacterKind, () => Look> = {
     eyes: eyes(0.08, 0.07),
     neck: [0, 0.06, 0.02],
     eyeAt: [0, 0.18, 0.15],
+    arm: [
+      p(box(0.05, 0.32, 0.05), 0x2f2540, [0.02, -0.16, 0]),
+      p(box(0.22, 0.28, 0.02), 0x5d4a80, [0.13, -0.15, 0]),
+    ],
+    shoulder: [0.17, 0.02, -0.04],
   }),
   ghost: () => ({
     body: [
@@ -228,6 +264,49 @@ const LOOKS: Record<CharacterKind, () => Look> = {
     eyes: eyes(0.12, 0.12, true),
     neck: [0, 0.07, 0],
     eyeAt: [0, 0.28, 0.27],
+    arm: [p(box(0.12, 0.22, 0.14), 0xf4f1ff, [0.02, -0.1, 0])],
+    shoulder: [0.35, 0.0, 0.04],
+  }),
+  fox: () => ({
+    body: [
+      ...legs(0.5, 0.46, -0.425, 0.13, 0x3a2a24),
+      p(box(0.5, 0.38, 0.46), 0xe8803a, [0, -0.11, -0.02]),
+      p(box(0.3, 0.3, 0.04), 0xfff4e8, [0, -0.1, 0.22]),
+      p(box(0.18, 0.18, 0.4), 0xe8803a, [0, -0.15, -0.38], [0.5, 0, 0]),
+      p(box(0.16, 0.14, 0.12), 0xfff4e8, [0, -0.06, -0.56], [0.5, 0, 0]),
+    ],
+    head: [
+      p(box(0.4, 0.34, 0.34), 0xe8803a, [0, 0.17, 0]),
+      p(box(0.18, 0.12, 0.14), 0xfff4e8, [0, 0.08, 0.22]),
+      p(box(0.05, 0.04, 0.03), INK, [0, 0.11, 0.3]),
+      p(cone(0.08, 0.18, 4), 0xe8803a, [-0.13, 0.42, 0], [0, Math.PI / 4, 0]),
+      p(cone(0.08, 0.18, 4), 0xe8803a, [0.13, 0.42, 0], [0, Math.PI / 4, 0]),
+    ],
+    eyes: eyes(0.09, 0.07),
+    neck: [0, 0.08, 0.06],
+    eyeAt: [0, 0.24, 0.18],
+    arm: arm(0xe8803a, 0x3a2a24, 0.22),
+    shoulder: [0.29, 0.02, 0.04],
+  }),
+  owl: () => ({
+    body: [
+      p(box(0.06, 0.1, 0.08), 0xf2a33a, [-0.1, -0.38, 0.05]),
+      p(box(0.06, 0.1, 0.08), 0xf2a33a, [0.1, -0.38, 0.05]),
+      p(box(0.48, 0.48, 0.42), 0x8a6a4a, [0, -0.08, 0]),
+      p(box(0.32, 0.34, 0.04), 0xe8d8b8, [0, -0.1, 0.21]),
+    ],
+    head: [
+      p(box(0.46, 0.34, 0.4), 0x8a6a4a, [0, 0.17, 0]),
+      p(box(0.34, 0.2, 0.02), 0xe8d8b8, [0, 0.2, 0.2]),
+      p(cone(0.05, 0.12, 4), 0xf2a33a, [0, 0.11, 0.22], [Math.PI / 2, 0, 0]),
+      p(box(0.08, 0.12, 0.08), 0x6e5238, [-0.17, 0.38, 0], [0, 0, 0.3]),
+      p(box(0.08, 0.12, 0.08), 0x6e5238, [0.17, 0.38, 0], [0, 0, -0.3]),
+    ],
+    eyes: eyes(0.09, 0.1),
+    neck: [0, 0.16, 0],
+    eyeAt: [0, 0.22, 0.22],
+    arm: [p(box(0.06, 0.34, 0.3), 0x6e5238, [0.03, -0.16, 0])],
+    shoulder: [0.25, 0.1, -0.02],
   }),
 };
 
@@ -235,6 +314,7 @@ interface Geometries {
   body: THREE.BufferGeometry;
   head: THREE.BufferGeometry;
   eyes: THREE.BufferGeometry;
+  arm: THREE.BufferGeometry;
   look: Look;
 }
 
@@ -248,6 +328,7 @@ function geometries(kind: CharacterKind): Geometries {
     body: merge(look.body) as THREE.BufferGeometry,
     head: merge(look.head) as THREE.BufferGeometry,
     eyes: merge(look.eyes) as THREE.BufferGeometry,
+    arm: merge(look.arm) as THREE.BufferGeometry,
     look,
   };
   geoCache.set(kind, built);
@@ -269,7 +350,7 @@ const eyeMat = new THREE.MeshBasicMaterial({ vertexColors: true });
 const damp = (from: number, to: number, rate: number, dt: number) =>
   from + (to - from) * Math.min(dt * rate, 1);
 
-/** The animated look of one character. `root` follows the physics body; the rest is procedural. */
+/** The animated look of one character. `root` follows the physics body (or stands still in the crowd). */
 export class CharacterRig {
   readonly root = new THREE.Group();
   readonly headHeight: number;
@@ -277,11 +358,14 @@ export class CharacterRig {
   private readonly rig = new THREE.Group();
   private readonly head: THREE.Mesh;
   private readonly eyes: THREE.Mesh;
+  /** shoulder pivots; the left arm mesh is mirrored, so its angles are applied mirrored too */
+  private readonly armR = new THREE.Group();
+  private readonly armL = new THREE.Group();
   private time = Math.random() * 10;
   private blinkIn = 1 + Math.random() * 3;
   private blinkLeft = 0;
 
-  constructor(kind: CharacterKind) {
+  constructor(kind: CharacterKind, castShadow = true) {
     const g = geometries(kind);
     const mat = CHARACTERS[kind].translucent ? ghostMat : solidMat;
     const body = new THREE.Mesh(g.body, mat);
@@ -290,9 +374,17 @@ export class CharacterRig {
     this.eyes = new THREE.Mesh(g.eyes, eyeMat);
     this.eyes.position.set(...g.look.eyeAt);
     this.head.add(this.eyes);
-    this.rig.add(body, this.head);
+    const [sx, sy, sz] = g.look.shoulder;
+    this.armR.position.set(sx, sy, sz);
+    this.armL.position.set(-sx, sy, sz);
+    const right = new THREE.Mesh(g.arm, mat);
+    const left = new THREE.Mesh(g.arm, mat);
+    left.scale.x = -1;
+    this.armR.add(right);
+    this.armL.add(left);
+    this.rig.add(body, this.head, this.armR, this.armL);
     this.root.add(this.rig);
-    for (const m of [body, this.head]) m.castShadow = true;
+    for (const m of [body, this.head, right, left]) m.castShadow = castShadow;
     this.headHeight = g.look.neck[1] + g.look.eyeAt[1];
   }
 
@@ -304,10 +396,16 @@ export class CharacterRig {
     let pitch = 0;
     let roll = 0;
     let hop = 0;
+    let twist = 0;
     let squash = 1;
     let eyeX = 1;
     let eyeY = 1;
-    if (look && (this.mood === 'idle' || this.mood === 'alert')) {
+    // arms: raise = out to the side and up (0 hangs, ~2.6 is straight up), swing = forward (negative) or back
+    let raiseR = 0.15;
+    let raiseL = 0.15;
+    let swingR = 0;
+    let swingL = 0;
+    if (look && (this.mood === 'idle' || this.mood === 'alert' || this.mood === 'wave')) {
       yaw = THREE.MathUtils.clamp(Math.atan2(look.x, look.z), -0.8, 0.8);
       pitch = THREE.MathUtils.clamp(
         -Math.atan2(look.y - this.headHeight, Math.hypot(look.x, look.z)),
@@ -318,32 +416,55 @@ export class CharacterRig {
     switch (this.mood) {
       case 'idle':
         hop = Math.max(0, Math.sin(t * 2.2)) * 0.012;
+        swingR = Math.sin(t * 2.2) * 0.08;
+        swingL = -swingR;
         break;
       case 'alert':
         eyeX = eyeY = 1.35;
         squash = 0.93;
+        raiseR = raiseL = 0.6;
+        swingR = swingL = -0.4;
         break;
       case 'panic':
         yaw = Math.sin(t * 22) * 0.35;
         hop = Math.abs(Math.sin(t * 14)) * 0.06;
         eyeX = eyeY = 1.4;
+        raiseR = 2.3 + Math.sin(t * 20) * 0.5;
+        raiseL = 2.3 + Math.cos(t * 20) * 0.5;
         break;
       case 'tumble':
         roll = Math.sin(t * 16) * 0.5;
         eyeX = 1.3;
         eyeY = 0.35;
+        raiseR = 1.5 + Math.sin(t * 16) * 0.6;
+        raiseL = 1.5 - Math.sin(t * 16) * 0.6;
         break;
       case 'cheer':
         hop = Math.abs(Math.sin(t * 7)) * 0.25;
         pitch = -0.3;
+        raiseR = raiseL = 2.6 + Math.sin(t * 14) * 0.25;
         break;
       case 'sad':
         pitch = 0.45;
         eyeY = 0.55;
         squash = 0.95;
+        raiseR = raiseL = 0.05;
+        swingR = swingL = -0.25;
+        break;
+      case 'wave':
+        roll = 0.12;
+        raiseR = 2.5 + Math.sin(t * 9) * 0.45;
+        hop = Math.max(0, Math.sin(t * 4.5)) * 0.02;
+        break;
+      case 'dance':
+        twist = Math.sin(t * 4) * 0.45;
+        hop = Math.abs(Math.sin(t * 8)) * 0.12;
+        roll = Math.sin(t * 4) * 0.25;
+        raiseR = 1.3 + Math.sin(t * 8) * 1.0;
+        raiseL = 1.3 - Math.sin(t * 8) * 1.0;
         break;
     }
-    // blink every few seconds, except mid-tumble when the eyes are squeezed shut anyway
+    // blink every few seconds
     this.blinkIn -= dt;
     if (this.blinkIn <= 0) {
       this.blinkLeft = 0.12;
@@ -357,6 +478,13 @@ export class CharacterRig {
     h.y = damp(h.y, yaw, 10, dt);
     h.x = damp(h.x, pitch, 10, dt);
     h.z = damp(h.z, roll, 12, dt);
+    const r = this.armR.rotation;
+    const l = this.armL.rotation;
+    r.z = damp(r.z, raiseR, 16, dt);
+    l.z = damp(l.z, -raiseL, 16, dt);
+    r.x = damp(r.x, swingR, 12, dt);
+    l.x = damp(l.x, swingL, 12, dt);
+    this.rig.rotation.y = damp(this.rig.rotation.y, twist, 10, dt);
     this.rig.position.y = damp(this.rig.position.y, hop, 20, dt);
     this.rig.scale.y = damp(this.rig.scale.y, squash, 12, dt);
     this.eyes.scale.set(damp(this.eyes.scale.x, eyeX, 20, dt), damp(this.eyes.scale.y, eyeY, 25, dt), 1);

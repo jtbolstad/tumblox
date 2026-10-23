@@ -124,12 +124,12 @@ Needs a behaviour scheduler, simple path-finding on block tops, per-kind action 
 
 ### E. Music and sound
 
-- [ ] Richer synthesis in `src/music.ts`, still sample-free: FM marimba and bells, Karplus-Strong plucks (banjo, lute, ukulele), synthesised drums (log drum, kick, shaker), a soft reverb send
-- [ ] One track per world (see the table under C), plus a mellow funky bass track for the editor; 16–32 bar loops with A/B sections so they wear less
-- [ ] Adaptive music: a percussion layer fades in during chains; music ducks under explosions
-- [ ] Win, lose and gold-medal stingers in place of `playResult()` in `src/audio.ts`
-- [ ] SFX in `src/audio.ts`: Karplus-Strong wood clacks, layered booms (sub plus crackle), gem chimes, coin pings for point blocks, whoosh by throw tier
-- [ ] Separate volume for music, effects and voices
+- [x] Richer synthesis (`src/synth.ts`), still sample-free: FM marimba and bells, Karplus-Strong plucks (banjo, lute, ukulele), synthesised drums (log drum, kick, shaker), a soft reverb send
+- [x] One track per world (see the table under C); 32-bar loops with A/B sections so they wear less. The editor track waits for the editor (Phase 3)
+- [x] Adaptive music: a percussion layer comes in during chains; music ducks under explosions, stingers and track changes
+- [x] Win, lose and gold-medal stingers (`playStinger` in `src/audio.ts`)
+- [x] SFX in `src/audio.ts`: Karplus-Strong wood clacks, layered booms (sub plus crackle), gem chimes, coin pings for point blocks, whoosh by throw tier
+- [x] Separate volume for music, effects and voices (🎚 panel), a soft master limiter, and a quiet ambient bed per world (birds, waves, wind, a bell, crickets and an owl)
 
 ### F. Name, logo, UI and launch page
 
@@ -154,6 +154,15 @@ Needs a behaviour scheduler, simple path-finding on block tops, per-kind action 
 - [x] Debug HUD and lil-gui only in development (`import.meta.env.DEV`)
 - [x] Launch page as a second Vite page (`about.html`): hero clip captured with Playwright (`pnpm hero`), feature list, Play button, credits, and "Inspired by Boom Blox (EA, 2008). Not affiliated."
 
+### G. Arena and crowd (from reference footage)
+
+Notes from an original gameplay frame (2026-10-24): the play area sits in an arena of giant pastel blocks like stadium seating, on a lush field; many characters stand on the blocks and on the grass around it, watching, waving and dancing.
+- [x] Arena: two tiers of giant bevelled pastel blocks ringing the back and sides, open toward the camera, tinted per world (`arena` in `src/themes.ts`, built in `src/props.ts`, one draw call); big props stand on top of the back tier
+- [x] Crowd: spectators of each world's species plus guests (new fox and owl) on the arena tops and the grass beside the pedestal; visual only, no physics; 6 / 10 / 16 by quality
+- [x] Arms (wings for hen, parrot, owl and bat) on every character, with new moves: wave, dance, arm-pumping cheer, flailing panic
+- [x] Crowd reactions: cheers on chains, scores and knocked-off rivals; dances on a win, droops on a loss; watches the ball in flight; a crowd "yay" with claps or an "aww"
+- [x] Props and spectators keep clear of wide pedestals (the title scene)
+
 ## Performance budget
 
 - 60 fps on a mid-range phone at Medium quality
@@ -172,7 +181,7 @@ Gate for each stage:
 ## Open questions
 
 - [ ] Should characters ever be the goal of whole levels (rescue stories), or stay an extra?
-- [ ] Should music change per level or only per world?
+- [x] Should music change per level or only per world? Per world (decided in stage E).
 - [ ] Is the launch page part of this site or a separate repo?
 
 ## Sources

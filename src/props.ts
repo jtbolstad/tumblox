@@ -1,6 +1,7 @@
 import * as THREE from 'three';
+import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
-import { ISLAND_RADIUS, seeded } from './scene';
+import { seeded } from './scene';
 import { THEMES, type ThemeId } from './themes';
 
 /**
@@ -216,8 +217,10 @@ const PROP_SETS: Record<ThemeId, { back: [Builder, number][]; ring: [Builder, nu
   },
 };
 
-/** Island props keep out of this radius (pedestal, zones, where blocks usually land). */
-const CLEAR_RADIUS = 11;
+/** Island props keep out of this radius (pedestal, zones, where blocks usually land)... */
+const CLEAR_RADIUS = 9.8;
+/** ...and inside the arena's inner tier. */
+const PROP_OUTER_RADIUS = 13.4;
 /** ...and out of the sector in front of the default camera (+z), so they never block the view. */
 const FRONT_HALF_ANGLE = THREE.MathUtils.degToRad(70);
 const BACK_HALF_ANGLE = THREE.MathUtils.degToRad(14);
@@ -242,42 +245,134 @@ function placeAll(
   }
 }
 
-function islandProps(theme: ThemeId, rand: () => number): Part[] {
+/** A place for a spectator to stand, facing the play area. */
+export interface Spot {
+  pos: THREE.Vector3;
+  /** rotation around y that faces the centre */
+  face: number;
+  /** on the grass (true) or on top of an arena block */
+  ground: boolean;
+}
+
+/** The arena opens toward the default camera (+z) so it never blocks the view. */
+const ARENA_OPEN_HALF = THREE.MathUtils.degToRad(62);
+const TIERS = [
+  { r: 15.5, h: [2.2, 3.4], w: [3.4, 4.6], d: 3.2 },
+  { r: 19.6, h: [4.6, 7.4], w: [4, 5.6], d: 3.4 },
+] as const;
+
+const lerp = (range: readonly [number, number], t: number) => range[0] + (range[1] - range[0]) * t;
+const faceCentre = (x: number, z: number) => Math.atan2(-x, -z);
+
+/** Darker at the foot, lighter at the top, so the giant blocks read as soft painted shapes. */
+function shadeByHeight(part: Part, height: number) {
+  const pos = part.geo.getAttribute('position');
+  const col = part.geo.getAttribute('color') as THREE.BufferAttribute;
+  for (let i = 0; i < pos.count; i++) {
+    const k = 0.78 + 0.3 * THREE.MathUtils.clamp(pos.getY(i) / height, 0, 1);
+    col.setXYZ(i, Math.min(col.getX(i) * k, 1), Math.min(col.getY(i) * k, 1), Math.min(col.getZ(i) * k, 1));
+  }
+}
+
+/** Two tiers of giant pastel blocks ringing the play area like stadium seating; returns their tops. */
+function arena(theme: ThemeId, rand: () => number): { parts: Part[]; tops: (Spot & { tier: number })[] } {
+  const palette = THEMES[theme].arena;
+  const parts: Part[] = [];
+  const tops: (Spot & { tier: number })[] = [];
+  TIERS.forEach((tier, t) => {
+    const end = Math.PI / 2 + 2 * Math.PI - ARENA_OPEN_HALF;
+    let a = Math.PI / 2 + ARENA_OPEN_HALF + (t === 1 ? 0.12 : 0);
+    for (;;) {
+      const w = lerp(tier.w, rand());
+      const h = lerp(tier.h, rand());
+      const mid = a + w / 2 / tier.r;
+      if (a + w / tier.r > end) break;
+      const x = Math.cos(mid) * tier.r;
+      const z = Math.sin(mid) * tier.r;
+      const face = faceCentre(x, z);
+      const part = p(
+        new RoundedBoxGeometry(w, h, tier.d, 2, 0.35),
+        palette[Math.floor(rand() * palette.length)],
+        [x, h / 2 - 0.05, z],
+        [0, face, 0],
+      );
+      shadeByHeight(part, h);
+      parts.push(part);
+      tops.push({ pos: new THREE.Vector3(x, h - 0.05, z), face, ground: false, tier: t });
+      a += (w + 0.3) / tier.r;
+    }
+  });
+  return { parts, tops };
+}
+
+function islandProps(
+  theme: ThemeId,
+  rand: () => number,
+  tops: (Spot & { tier: number })[],
+  pedestalHalf: number,
+): { parts: Part[]; free: Spot[] } {
+  // a wide pedestal (the title) pushes loose props and ground spectators further out
+  const clear = Math.max(CLEAR_RADIUS, pedestalHalf + 1.5);
   const parts: Part[] = [];
   const taken: [number, number][] = [];
   const free = (x: number, z: number, gap: number) =>
     taken.every(([tx, tz]) => Math.hypot(x - tx, z - tz) > gap);
   const { back, ring } = PROP_SETS[theme];
+  const spots = [...tops];
   for (const [build, count] of back) {
     for (let i = 0; i < count; i++) {
-      // big pieces stand behind and to the side of the pedestal, framing the view without hiding the target
+      // big pieces stand on top of the back tier, to the sides of the target
       const side = count === 1 ? 1 : i % 2 === 0 ? -1 : 1;
-      const a = -Math.PI / 2 + side * (0.6 + rand() * 0.3);
-      const r = 17 + rand() * 3;
-      const x = Math.cos(a) * r;
-      const z = Math.sin(a) * r;
-      taken.push([x, z]);
-      placeAll(parts, build(rand), x, 0, z, rand() * Math.PI * 2, 1);
+      const want = -Math.PI / 2 + side * (0.6 + rand() * 0.3);
+      let best = -1;
+      let bestGap = Number.POSITIVE_INFINITY;
+      spots.forEach((s, k) => {
+        if (s.tier !== 1) return;
+        const gap = Math.abs(
+          Math.atan2(
+            Math.sin(Math.atan2(s.pos.z, s.pos.x) - want),
+            Math.cos(Math.atan2(s.pos.z, s.pos.x) - want),
+          ),
+        );
+        if (gap < bestGap) {
+          bestGap = gap;
+          best = k;
+        }
+      });
+      if (best < 0) continue;
+      const [spot] = spots.splice(best, 1);
+      placeAll(parts, build(rand), spot.pos.x, spot.pos.y, spot.pos.z, rand() * Math.PI * 2, 0.8);
     }
   }
-  for (const [build, count] of ring) {
+  for (const [build, total] of ring) {
+    const count = Math.ceil(total * 0.6); // the arena fills the background now, so fewer loose props
     let placed = 0;
     for (let tries = 0; placed < count && tries < count * 30; tries++) {
       const a = rand() * Math.PI * 2;
       const fromFront = Math.abs(Math.atan2(Math.sin(a - Math.PI / 2), Math.cos(a - Math.PI / 2)));
       if (fromFront < FRONT_HALF_ANGLE) continue;
-      const r = CLEAR_RADIUS + rand() * (ISLAND_RADIUS - CLEAR_RADIUS - 2);
-      // keep a lane right behind the pedestal clear too, so nothing tall sits behind the target
-      if (Math.PI - fromFront < BACK_HALF_ANGLE && r < 18) continue;
+      const r = clear + rand() * Math.max(PROP_OUTER_RADIUS - clear, 0.5);
       const x = Math.cos(a) * r;
       const z = Math.sin(a) * r;
+      // keep a lane right behind the pedestal clear too, so nothing tall sits behind the target
+      if (Math.PI - fromFront < BACK_HALF_ANGLE || (z < 0 && Math.abs(x) < pedestalHalf + 1.5)) continue;
       if (!free(x, z, 2.5)) continue;
       taken.push([x, z]);
       placeAll(parts, build(rand), x, 0, z, rand() * Math.PI * 2, 0.85 + rand() * 0.3);
       placed++;
     }
   }
-  return parts;
+  // spectators on the grass at the sides of the pedestal, as well as up on the arena
+  for (const side of [-1, 1]) {
+    for (let i = 0; i < 3; i++) {
+      const a = Math.PI / 2 + side * THREE.MathUtils.degToRad(78 + i * 14);
+      const r = clear - 0.8 + rand() * 1.8;
+      const x = Math.cos(a) * r;
+      const z = Math.sin(a) * r;
+      spots.push({ pos: new THREE.Vector3(x, 0, z), face: faceCentre(x, z), ground: true, tier: -1 });
+    }
+  }
+  return { parts, free: spots };
 }
 
 /** A small floating island far away, optionally carrying a prop. */
@@ -338,11 +433,25 @@ export function merge(parts: Part[]): THREE.BufferGeometry | null {
   return geo;
 }
 
-/** Everything decorative for a world, as one group to add to (and later remove from) the scene. */
-export function buildProps(theme: ThemeId): THREE.Group {
+/**
+ * Everything decorative for a world, as one group to add to (and later remove from) the scene, plus the
+ * free spots where spectators can stand.
+ */
+export function buildProps(theme: ThemeId, pedestalHalf: number): { group: THREE.Group; spots: Spot[] } {
   const rand = seeded(THEMES[theme].name.length * 131 + 7);
-  const parts = [...islandProps(theme, rand), ...distantScenery(theme, rand)];
+  const stands = arena(theme, rand);
+  const island = islandProps(theme, rand, stands.tops, pedestalHalf);
+  const parts = [...island.parts, ...distantScenery(theme, rand)];
   const group = new THREE.Group();
+  const arenaGeo = merge(stands.parts);
+  if (arenaGeo) {
+    const mesh = new THREE.Mesh(
+      arenaGeo,
+      new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.85 }),
+    );
+    mesh.receiveShadow = true;
+    group.add(mesh);
+  }
   const solid = merge(parts.filter((part) => !part.glow));
   const glow = merge(parts.filter((part) => part.glow));
   if (solid) {
@@ -363,7 +472,7 @@ export function buildProps(theme: ThemeId): THREE.Group {
     water.position.y = -0.7; // just under the island top, hiding the rocky underside
     group.add(water);
   }
-  return group;
+  return { group, spots: island.free };
 }
 
 export function disposeGroup(group: THREE.Group) {

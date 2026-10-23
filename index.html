@@ -26,7 +26,7 @@
       .panel { background: var(--panel); border-radius: 16px; padding: 20px; max-width: 760px; width: 100%; max-height: 100%; overflow: auto; box-sizing: border-box; text-align: center; }
       .panel h1, .panel h2 { margin: 0 0 12px; }
       .worlds { display: flex; flex-direction: column; gap: 14px; text-align: left; }
-      .world { border-radius: 14px; padding: 12px 14px 18px; background: linear-gradient(var(--sky-top), var(--sky-horizon)); }
+      .world { border-radius: 14px; padding: 12px 14px 18px; background: linear-gradient(to bottom, var(--sky-top), var(--sky-horizon)); }
       .world header { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; color: var(--title-ink); margin-bottom: 10px; }
       .world h2 { margin: 0; font-size: 1.3em; }
       .world .tally { font-weight: 600; font-size: 0.9em; }
@@ -80,15 +80,19 @@
       #title .bottom { display: flex; flex-direction: column; align-items: center; gap: 10px; }
       #title button { pointer-events: auto; font-size: 1.5em; padding: 14px 42px; border-radius: 16px; box-shadow: 0 5px 0 #c96a00; }
       #title .try { font-size: 0.9em; opacity: 0.75; }
-      body.on-title #hud > :not(#mute-btn):not(#music-btn):not(#voice-btn):not(#quality-btn) { display: none; }
+      body.on-title #hud > :not(#mute-btn):not(#sound-btn):not(#quality-btn) { display: none; }
       .drop { animation: medal-drop 0.9s cubic-bezier(0.3, 1.6, 0.5, 1) both; }
       @keyframes medal-drop {
         0% { opacity: 0; transform: translateY(-120px) rotate(-30deg) scale(0.6); }
         60% { opacity: 1; transform: translateY(0) rotate(8deg) scale(1.25); }
         100% { transform: translateY(0) rotate(0) scale(1); }
       }
-      body.capture #hud, body.capture #title, body.capture #hint, body.capture #callout, body.capture .popup, body.capture #toast { display: none !important; }
+      body.capture #hud, body.capture #title, body.capture #hint, body.capture #callout, body.capture .popup, body.capture #toast { display: none; }
       .about-link { align-self: center; color: var(--ink); font-weight: 600; }
+      #sound-panel { position: fixed; top: 52px; left: 8px; z-index: 5; display: grid; gap: 8px; background: var(--panel); border-radius: 12px; padding: 12px 14px; font-weight: 600; box-shadow: 0 6px 16px rgba(2, 48, 71, 0.25); }
+      #sound-panel[hidden] { display: none; }
+      #sound-panel label { display: grid; grid-template-columns: 4.5em 1fr; align-items: center; gap: 10px; }
+      #sound-panel input { width: 150px; accent-color: var(--accent); }
       .big { font-size: 2.2em; margin: 4px 0; }
     </style>
   </head>
@@ -97,8 +101,7 @@
     <div id="hud">
       <button type="button" id="menu-btn" class="secondary">Levels</button>
       <button type="button" id="mute-btn" class="secondary" aria-label="Toggle sound">🔊</button>
-      <button type="button" id="music-btn" class="secondary" aria-label="Toggle music">🎵</button>
-      <button type="button" id="voice-btn" class="secondary" aria-label="Toggle character voices">💬</button>
+      <button type="button" id="sound-btn" class="secondary" aria-label="Sound settings" aria-expanded="false" aria-controls="sound-panel">🎚</button>
       <button type="button" id="quality-btn" class="secondary" aria-label="Graphics quality">High</button>
       <span id="level-name"></span>
       <span><span id="throws-label">Throws</span>: <span id="throws">0</span></span>
@@ -136,6 +139,11 @@
           <button type="button" id="levels-btn" class="secondary">Levels</button>
         </div>
       </div>
+    </div>
+    <div id="sound-panel" hidden>
+      <label>Music <input type="range" min="0" max="100" data-channel="music" /></label>
+      <label>Effects <input type="range" min="0" max="100" data-channel="effects" /></label>
+      <label>Voices <input type="range" min="0" max="100" data-channel="voices" /></label>
     </div>
     <div id="toast" role="status" aria-live="polite"></div>
     <div id="callout" aria-hidden="true"></div>

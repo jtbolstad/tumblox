@@ -4,19 +4,23 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
 import {
-  areVoicesOn,
+  type Channel,
+  getVolume,
   type ImpactKind,
   isMuted,
   playBoom,
+  playCrowd,
   playImpact,
   playLaser,
   playNote,
-  playResult,
   playScore,
+  playStinger,
   playVanish,
   playVoice,
+  playWhoosh,
+  setAmbience,
   setMuted,
-  setVoicesOn,
+  setVolume,
   unlockAudio,
 } from './audio';
 import { BLOCKS, type BlockType } from './blocks';
@@ -24,7 +28,7 @@ import { CHARACTERS, type CharacterKind, CharacterRig, type Mood, moodFor, type 
 import { Debris, disposeMesh, makeZoneMesh, Particles, Puffs, Shake, Shockwaves } from './fx';
 import { type Level, loadBundledLevels } from './level';
 import { blockTexture } from './marks';
-import { initMusic, isMusicOn, setMusicOn } from './music';
+import { exciteMusic, initMusic, setTrack } from './music';
 import {
   createParty,
   endDuelTurn,
@@ -36,7 +40,7 @@ import {
   totalTurns,
 } from './party';
 import { loadProgress, recordResult } from './progress';
-import { buildProps, disposeGroup } from './props';
+import { buildProps, disposeGroup, type Spot } from './props';
 import {
   type BlockState,
   type BlockStatus,
@@ -98,11 +102,14 @@ const KEY_ORBIT_SPEED = 1.2; // rad/s for Q/E
 const INFINITE_TURNS = 999; // Jenga-off has no throw limit
 const QUALITIES = ['low', 'medium', 'high'] as const;
 type Quality = (typeof QUALITIES)[number];
-const QUALITY_SETTINGS: Record<Quality, { pixelRatio: number; shadowMap: number; extras: boolean }> = {
+const QUALITY_SETTINGS: Record<
+  Quality,
+  { pixelRatio: number; shadowMap: number; extras: boolean; crowd: number }
+> = {
   // extras: rim light and gem sparkles
-  low: { pixelRatio: 1, shadowMap: 512, extras: false },
-  medium: { pixelRatio: 1.5, shadowMap: 1024, extras: true },
-  high: { pixelRatio: 2, shadowMap: 2048, extras: true },
+  low: { pixelRatio: 1, shadowMap: 512, extras: false, crowd: 6 },
+  medium: { pixelRatio: 1.5, shadowMap: 1024, extras: true, crowd: 10 },
+  high: { pixelRatio: 2, shadowMap: 2048, extras: true, crowd: 16 },
 };
 const SPARKLE_INTERVAL = 0.18; // s between gem glints
 const DUST_SPEED = 4; // m/s impact that kicks up dust
@@ -218,6 +225,25 @@ const { sun, rim, hemi } = addLights(scene); // sun is the one shadow light
 let themeId: ThemeId | null = null;
 let island: THREE.Group | null = null;
 let props: THREE.Group | null = null;
+let crowdSpots: Spot[] = [];
+let propsKey = '';
+
+/** Rebuild props and the crowd for a world and pedestal width (normal levels share one size bucket). */
+function applyProps(id: ThemeId, pedestalHalf: number) {
+  const half = Math.max(3, Math.ceil(pedestalHalf));
+  const key = `${id}:${half}`;
+  if (key === propsKey) return;
+  propsKey = key;
+  if (props) {
+    scene.remove(props);
+    disposeGroup(props);
+  }
+  const built = buildProps(id, half);
+  props = built.group;
+  crowdSpots = built.spots;
+  scene.add(props);
+  buildCrowd();
+}
 
 /** Switch sky, island, props, light and pedestal to a world. Cheap to call: does nothing if it is current. */
 function applyTheme(id: ThemeId) {
@@ -227,14 +253,12 @@ function applyTheme(id: ThemeId) {
   setSkyColors(sky, t.sky);
   background.set(t.sky.horizon);
   fog.color.set(t.sky.horizon);
-  for (const old of [island, props]) {
-    if (!old) continue;
-    scene.remove(old);
-    disposeGroup(old);
+  if (island) {
+    scene.remove(island);
+    disposeGroup(island);
   }
   island = makeIsland(t);
-  props = buildProps(id);
-  scene.add(island, props);
+  scene.add(island);
   scene.environment?.dispose();
   scene.environment = makeEnvironment(renderer, t);
   sun.color.set(t.sun.color);
@@ -248,6 +272,8 @@ function applyTheme(id: ThemeId) {
   platformMat.map = blockTexture(t.pedestalStone ? 'immobile' : 'wood', false);
   platformMat.needsUpdate = true;
   renderer.shadowMap.needsUpdate = true;
+  setTrack(id);
+  setAmbience(id);
 }
 
 const controls = new OrbitControls(camera, canvas);
@@ -280,6 +306,7 @@ function applyQuality() {
   sun.shadow.map?.dispose();
   sun.shadow.map = null; // reallocated at the new size on the next shadow render
   rim.visible = q.extras;
+  if (themeId) buildCrowd(); // crowd size follows quality
   renderer.setSize(innerWidth, innerHeight, false);
   renderer.shadowMap.needsUpdate = true;
 }
@@ -519,7 +546,7 @@ function partyTopple() {
   const p = party;
   const loser = p.current;
   const rebuild = topple(p);
-  playResult(false);
+  playStinger('lose');
   refreshParty();
   if (!rebuild) return finishParty();
   phase = 'lost'; // freeze the sim until the rebuild
@@ -534,7 +561,7 @@ function partyTopple() {
 function finishParty() {
   if (!party?.winners) return;
   phase = 'won';
-  playResult(true);
+  playStinger('win');
   const names = party.winners.map(playerLabel).join(' & ');
   const detail =
     party.mode === 'duel'
@@ -581,6 +608,7 @@ function loadLevel(index: number) {
   levelIndex = index;
   level = index === TITLE_INDEX ? titleScene : levels[index];
   applyTheme(level.theme);
+  applyProps(level.theme, Math.max(...level.platform.size) / 2);
   throwsUsed = 0;
   simTime = 0;
   lastMotion = 0;
@@ -920,6 +948,8 @@ function countChain() {
   const gained = chainBonus(chainLength);
   if (gained === 0) return;
   bonus += gained;
+  exciteMusic();
+  crowdCheer(2.5);
   ui.callout(`Chain ×${chainLength}!`, `+${gained}`);
   slowUntil = lastFrameAt + 1000;
 }
@@ -1237,7 +1267,8 @@ function popupFor(e: BlockEntity) {
   const points = BLOCKS[e.type].points;
   if (points === 0) return;
   particles.burst(e.currPos, BLOCKS[e.type].color, 10, 4);
-  playScore();
+  playScore(e.type === 'gem' ? 'gem' : points < 0 ? 'penalty' : 'point');
+  if (points > 0) crowdCheer(1.2);
   popupAt(
     e.currPos,
     `${points > 0 ? '+' : ''}${points}`,
@@ -1249,10 +1280,12 @@ function popupFor(e: BlockEntity) {
 /** A character went over the edge: points for a rival, a warning for a friend. */
 function characterFell(c: CharacterEntity) {
   if (c.role === 'rival') {
-    playScore(true);
+    playScore('rival');
+    crowdCheer(1.5);
     popupAt(c.currPos, `+${RIVAL_POINTS}`, false, '#e63946');
   } else if (c.role === 'friend') {
     popupAt(c.currPos, 'Oh no!', true);
+    playCrowd('aww');
   }
 }
 
@@ -1361,10 +1394,12 @@ function finishIfDone() {
     const score = finalScore(states, throwsLeft(), bonus + characterScore(charStates()));
     const medal = medalFor(score, level.medals);
     const saved = recordResult(level.id, score, medal);
-    playResult(true);
+    playStinger(medal === 'gold' ? 'gold' : 'win');
+    playCrowd('cheer');
     ui.showResult({ won: true, score, medal, best: saved.best, hasNext: levelIndex < levels.length - 1 });
   } else {
-    playResult(false);
+    playStinger('lose');
+    playCrowd('aww');
     ui.showResult({
       won: false,
       score: 0,
@@ -1495,28 +1530,29 @@ muteBtn.addEventListener('click', () => {
   unlockAudio();
 });
 
-const voiceBtn = document.getElementById('voice-btn') as HTMLElement;
-function showVoices() {
-  voiceBtn.style.opacity = areVoicesOn() ? '1' : '0.5';
-  voiceBtn.setAttribute('aria-pressed', String(areVoicesOn()));
+// sound panel: one slider per channel
+const soundBtn = document.getElementById('sound-btn') as HTMLElement;
+const soundPanel = document.getElementById('sound-panel') as HTMLElement;
+for (const input of soundPanel.querySelectorAll<HTMLInputElement>('input[type=range]')) {
+  const channel = input.dataset.channel as Channel;
+  input.value = String(Math.round(getVolume(channel) * 100));
+  input.addEventListener('input', () => {
+    unlockAudio();
+    setVolume(channel, Number(input.value) / 100);
+  });
 }
-showVoices();
-voiceBtn.addEventListener('click', () => {
-  setVoicesOn(!areVoicesOn());
-  showVoices();
+soundBtn.addEventListener('click', (ev) => {
+  ev.stopPropagation();
+  soundPanel.hidden = !soundPanel.hidden;
+  soundBtn.setAttribute('aria-expanded', String(!soundPanel.hidden));
   unlockAudio();
 });
-
-const musicBtn = document.getElementById('music-btn') as HTMLElement;
-function showMusic() {
-  musicBtn.style.opacity = isMusicOn() ? '1' : '0.5';
-  musicBtn.setAttribute('aria-pressed', String(isMusicOn()));
-}
-showMusic();
-musicBtn.addEventListener('click', () => {
-  setMusicOn(!isMusicOn());
-  showMusic();
-  unlockAudio();
+soundPanel.addEventListener('click', (ev) => ev.stopPropagation());
+addEventListener('click', () => {
+  if (!soundPanel.hidden) {
+    soundPanel.hidden = true;
+    soundBtn.setAttribute('aria-expanded', 'false');
+  }
 });
 
 const qualityBtn = document.getElementById('quality-btn') as HTMLElement;
@@ -1726,6 +1762,7 @@ function launch(px: number, py: number, flickSpeed: number) {
   } else {
     const s = computeShot(px, py, flickSpeed);
     spawnBall(s.origin, s.velocity);
+    playWhoosh(s.tier);
     hudTier.textContent = tierNames[s.tier];
   }
   throwsUsed++;
@@ -1885,13 +1922,82 @@ function updateCharacters(dt: number) {
     });
     if (mood !== c.mood) {
       c.mood = c.rig.mood = mood;
-      if (mood !== 'idle') say(c, mood);
+      if (mood !== 'idle' && mood !== 'wave' && mood !== 'dance') say(c, mood);
     }
     // watch an incoming ball; otherwise look at the player (the camera)
     lookTarget.copy(ball ? ball.mesh.position : camera.position);
     c.rig.root.updateMatrixWorld();
     c.rig.update(dt, c.rig.root.worldToLocal(lookTarget));
   }
+}
+
+// ---------- the crowd: spectators around the arena, visual only ----------
+interface Spectator {
+  rig: CharacterRig;
+  /** its own idle routine: stand, wave or dance, changing every few seconds */
+  idleMood: Mood;
+  nextChange: number;
+}
+const crowd: Spectator[] = [];
+const CROWD_SCALE = { arena: 1.5, ground: 1.15 };
+let crowdCheerUntil = 0; // performance.now() until which the whole crowd cheers
+
+/** Fill the free spots with the world's species: a few on the grass, the rest up on the arena. */
+function buildCrowd() {
+  for (const s of crowd) scene.remove(s.rig.root);
+  crowd.length = 0;
+  if (!themeId) return;
+  const species = THEMES[themeId].crowd;
+  const count = QUALITY_SETTINGS[quality].crowd;
+  const ground = crowdSpots.filter((s) => s.ground);
+  const stands = crowdSpots.filter((s) => !s.ground);
+  // spread picks evenly around the arena rather than bunching them at one end
+  const picks = [
+    ...ground.slice(0, Math.min(ground.length, Math.ceil(count / 4))),
+    ...stands.filter((_, i) => i % Math.max(1, Math.floor(stands.length / count)) === 0),
+  ].slice(0, count);
+  picks.forEach((spot, i) => {
+    const kind = species[i % species.length];
+    const rig = new CharacterRig(kind, false); // no shadows: a crowd of shadow casters costs too much
+    const scale = spot.ground ? CROWD_SCALE.ground : CROWD_SCALE.arena;
+    rig.root.scale.setScalar(scale);
+    rig.root.position.copy(spot.pos);
+    rig.root.position.y += (CHARACTERS[kind].size[1] / 2) * scale;
+    rig.root.rotation.y = spot.face;
+    scene.add(rig.root);
+    crowd.push({ rig, idleMood: 'idle', nextChange: 0 });
+  });
+}
+
+function crowdCheer(seconds: number) {
+  crowdCheerUntil = Math.max(crowdCheerUntil, performance.now() + seconds * 1000);
+  playCrowd('cheer');
+}
+
+const crowdLook = new THREE.Vector3();
+const IDLE_ROUTINE: Mood[] = ['idle', 'idle', 'idle', 'wave', 'wave', 'dance'];
+
+function updateCrowd(dt: number) {
+  const now = performance.now();
+  const flying = balls.find((b) => speedOf(b.body) > 3);
+  crowd.forEach((s, i) => {
+    let mood: Mood;
+    if (phase === 'won') mood = i % 3 === 0 ? 'cheer' : 'dance';
+    else if (phase === 'lost') mood = 'sad';
+    else if (now < crowdCheerUntil) mood = i % 4 === 0 ? 'wave' : 'cheer';
+    else {
+      if (now > s.nextChange) {
+        s.idleMood = IDLE_ROUTINE[Math.floor(Math.random() * IDLE_ROUTINE.length)];
+        s.nextChange = now + 2500 + Math.random() * 4000;
+      }
+      mood = s.idleMood;
+    }
+    s.rig.mood = mood;
+    // everyone watches the ball in flight, otherwise the action on the pedestal
+    crowdLook.copy(flying ? flying.mesh.position : controls.target);
+    s.rig.root.updateMatrixWorld();
+    s.rig.update(dt, s.rig.root.worldToLocal(crowdLook));
+  });
 }
 
 // ---------- gem glints ----------
@@ -2011,6 +2117,7 @@ function tick(now: number) {
   updateAimPreview(now);
   sparkleGems(dt);
   updateCharacters(dt);
+  updateCrowd(dt);
   updateTrails();
   particles.update(fxDt, params.gravity);
   debris.update(fxDt, params.gravity);

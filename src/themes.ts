@@ -1,3 +1,5 @@
+import type { CharacterKind } from './characters';
+
 /** Worlds: each level's `theme` picks the sky, island, light and props around it. Block colours never change. */
 export const THEME_IDS = ['meadow', 'tiki', 'castle', 'gulch', 'manor'] as const;
 export type ThemeId = (typeof THEME_IDS)[number];
@@ -20,6 +22,10 @@ export interface ThemeDef {
   /** a sea around the island instead of open sky below it */
   sea?: number;
   cloud: number;
+  /** soft colours of the giant blocks that ring the play area like stadium seating */
+  arena: number[];
+  /** who comes to watch */
+  crowd: CharacterKind[];
 }
 
 export const THEMES: Record<ThemeId, ThemeDef> = {
@@ -34,6 +40,8 @@ export const THEMES: Record<ThemeId, ThemeDef> = {
     rim: 0x9ad1ff,
     pedestal: 0xc8a27a,
     cloud: 0xe4f1ff,
+    arena: [0xc9c3e6, 0xb8e6d4, 0xf2c4ce, 0xf6d6b8, 0xc4e0f2],
+    crowd: ['goat', 'hen', 'fox', 'owl'],
   },
   tiki: {
     name: 'Tiki Isle',
@@ -47,6 +55,8 @@ export const THEMES: Record<ThemeId, ThemeDef> = {
     pedestal: 0xd9b77a,
     sea: 0x3fb7c4,
     cloud: 0xffe9d9,
+    arena: [0xf6d6a8, 0x9fe0d8, 0xf6b8a0, 0xfff0c8, 0xa8d8f0],
+    crowd: ['frog', 'parrot', 'fox', 'hen'],
   },
   castle: {
     name: 'Castle Hill',
@@ -60,6 +70,8 @@ export const THEMES: Record<ThemeId, ThemeDef> = {
     pedestal: 0xb9b4a8,
     pedestalStone: true,
     cloud: 0xf2f6ff,
+    arena: [0xd8d4e8, 0xc8d8e8, 0xe8e0c8, 0xd0e4d0, 0xe8d0d8],
+    crowd: ['pig', 'goat', 'owl', 'hen'],
   },
   gulch: {
     name: 'Dusty Gulch',
@@ -72,6 +84,8 @@ export const THEMES: Record<ThemeId, ThemeDef> = {
     rim: 0xffc48a,
     pedestal: 0xb9774f,
     cloud: 0xfff0dc,
+    arena: [0xf0c8a0, 0xe8b090, 0xf6dcb0, 0xd8a890, 0xf0d0c0],
+    crowd: ['armadillo', 'fox', 'hen', 'goat'],
   },
   manor: {
     name: 'Spooky Manor',
@@ -84,5 +98,7 @@ export const THEMES: Record<ThemeId, ThemeDef> = {
     rim: 0xb58cff,
     pedestal: 0x7a6578,
     cloud: 0x8a80b8,
+    arena: [0x6a5a8a, 0x5a6a8a, 0x7a5a7a, 0x4a6a6a, 0x8a7aa0],
+    crowd: ['bat', 'ghost', 'owl', 'fox'],
   },
 };

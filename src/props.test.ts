@@ -1,0 +1,26 @@
+import { describe, expect, it } from 'vitest';
+import { CHARACTER_IDS } from './characters';
+import { buildProps } from './props';
+import { THEME_IDS, THEMES } from './themes';
+
+describe('arena and crowd spots', () => {
+  for (const theme of THEME_IDS) {
+    it(`${theme}: spectators stay out of the camera's side and off the pedestal`, () => {
+      for (const pedestalHalf of [3, 11]) {
+        const { spots } = buildProps(theme, pedestalHalf);
+        expect(spots.length).toBeGreaterThanOrEqual(16); // enough for the High quality crowd
+        for (const s of spots) {
+          const fromFront = Math.abs(Math.atan2(s.pos.x, s.pos.z)); // 0 = straight toward the camera
+          expect(fromFront).toBeGreaterThan(Math.PI / 3);
+          expect(Math.hypot(s.pos.x, s.pos.z)).toBeGreaterThan(pedestalHalf);
+        }
+      }
+    });
+  }
+
+  it('only invites characters that exist', () => {
+    for (const theme of THEME_IDS) {
+      for (const kind of THEMES[theme].crowd) expect(CHARACTER_IDS).toContain(kind);
+    }
+  });
+});
