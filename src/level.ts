@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { BLOCK_IDS } from './blocks';
+import { THEME_IDS } from './themes';
 import { TOOL_IDS } from './tools';
 
 const vec3 = z.tuple([z.number(), z.number(), z.number()]);
@@ -15,7 +16,8 @@ export const goalSchema = z.discriminatedUnion('type', [
 export const levelSchema = z.object({
   id: z.string().min(1),
   name: z.string().min(1),
-  theme: z.string().default('meadow'),
+  /** world: sky, island, light and props (see src/themes.ts) */
+  theme: z.enum(THEME_IDS).default('meadow'),
   tool: z.enum(TOOL_IDS).default('ball'),
   throws: z.number().int().positive(),
   goal: goalSchema,

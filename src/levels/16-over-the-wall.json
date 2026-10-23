@@ -1,7 +1,7 @@
 {
   "id": "over-the-wall",
   "name": "Over the Wall",
-  "theme": "meadow",
+  "theme": "castle",
   "tool": "bouncy",
   "throws": 3,
   "goal": {

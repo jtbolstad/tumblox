@@ -1,7 +1,7 @@
 {
   "id": "jenga-2",
   "name": "Tall Order",
-  "theme": "meadow",
+  "theme": "castle",
   "tool": "grab",
   "throws": 8,
   "goal": {

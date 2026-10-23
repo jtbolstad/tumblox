@@ -1,5 +1,5 @@
+import '@fontsource-variable/fredoka';
 import RAPIER from '@dimforge/rapier3d-compat';
-import GUI from 'lil-gui';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
@@ -32,6 +32,7 @@ import {
   totalTurns,
 } from './party';
 import { loadProgress, recordResult } from './progress';
+import { buildProps, disposeGroup } from './props';
 import {
   type BlockState,
   type BlockStatus,
@@ -53,9 +54,11 @@ import {
   makeEnvironment,
   makeIsland,
   makeSky,
-  SKY,
+  setSkyColors,
 } from './scene';
+import { THEMES, type ThemeId } from './themes';
 import { chargeTier, type PointerSample, powerTier, releaseVelocity } from './throw';
+import { titleLevel } from './title';
 import { TOOL_IDS, TOOLS, type ToolId } from './tools';
 import { createUi } from './ui';
 
@@ -100,6 +103,7 @@ const SQUASH_SECONDS = 0.18;
 const TRAIL_SPEED = 6; // m/s above which balls leave a trail
 const SLOWMO_PUSH = 0.18; // share of the camera distance the view pushes in during slow-mo
 const INTRO_SECONDS = 2;
+const MAX_ZOOM_OUT = 35; // m
 const WIN_ORBIT_SPEED = 0.15; // rad/s while the result screen is up
 
 const params = {
@@ -158,7 +162,8 @@ interface BallEntity extends Entity {
 
 type Blaster = BlockEntity | BallEntity;
 
-type Phase = 'menu' | 'playing' | 'won' | 'lost';
+/** title: the knock-down logo scene, free throws and no goal. */
+type Phase = 'title' | 'menu' | 'playing' | 'won' | 'lost';
 
 await RAPIER.init();
 
@@ -171,21 +176,61 @@ renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 renderer.toneMapping = THREE.NeutralToneMapping; // keeps the saturated toy colours, unlike ACES/AgX
 
 const scene = new THREE.Scene();
-scene.fog = new THREE.Fog(SKY.horizon, 70, 190);
-scene.add(makeSky(), makeClouds(), makeIsland());
-scene.environment = makeEnvironment(renderer);
+const fog = new THREE.Fog(THEMES.meadow.sky.horizon, 70, 190);
+const background = new THREE.Color(THEMES.meadow.sky.horizon); // shows only if the sky dome is ever clipped
+scene.fog = fog;
+scene.background = background;
+const sky = makeSky();
+const clouds = makeClouds();
+scene.add(sky, clouds);
 scene.environmentIntensity = 0.6;
 
-const camera = new THREE.PerspectiveCamera(50, 1, 0.1, 200);
+const camera = new THREE.PerspectiveCamera(50, 1, 0.1, 400); // far enough to keep the sky dome whole when zoomed out
 camera.position.set(0, 5, 14);
 
-const { sun, rim } = addLights(scene); // sun is the one shadow light
+const { sun, rim, hemi } = addLights(scene); // sun is the one shadow light
+
+// ---------- worlds ----------
+let themeId: ThemeId | null = null;
+let island: THREE.Group | null = null;
+let props: THREE.Group | null = null;
+
+/** Switch sky, island, props, light and pedestal to a world. Cheap to call: does nothing if it is current. */
+function applyTheme(id: ThemeId) {
+  if (id === themeId) return;
+  themeId = id;
+  const t = THEMES[id];
+  setSkyColors(sky, t.sky);
+  background.set(t.sky.horizon);
+  fog.color.set(t.sky.horizon);
+  for (const old of [island, props]) {
+    if (!old) continue;
+    scene.remove(old);
+    disposeGroup(old);
+  }
+  island = makeIsland(t);
+  props = buildProps(id);
+  scene.add(island, props);
+  scene.environment?.dispose();
+  scene.environment = makeEnvironment(renderer, t);
+  sun.color.set(t.sun.color);
+  sun.intensity = t.sun.intensity;
+  rim.color.set(t.rim);
+  hemi.color.set(t.hemi.sky);
+  hemi.groundColor.set(t.hemi.ground);
+  hemi.intensity = t.hemi.intensity;
+  (clouds.material as THREE.MeshLambertMaterial).emissive.set(t.cloud);
+  platformMat.color.set(t.pedestal);
+  platformMat.map = blockTexture(t.pedestalStone ? 'immobile' : 'wood', false);
+  platformMat.needsUpdate = true;
+  renderer.shadowMap.needsUpdate = true;
+}
 
 const controls = new OrbitControls(camera, canvas);
 controls.target.set(0, 2.5, 0);
 controls.enableDamping = true;
 controls.minDistance = 6;
-controls.maxDistance = 35;
+controls.maxDistance = MAX_ZOOM_OUT;
 controls.maxPolarAngle = Math.PI / 2 - 0.05;
 // left button / one finger = throw; right button / two fingers = orbit + pinch
 controls.mouseButtons = { LEFT: -1 as THREE.MOUSE, MIDDLE: THREE.MOUSE.DOLLY, RIGHT: THREE.MOUSE.ROTATE };
@@ -327,12 +372,25 @@ const ui = createUi({
   },
   onRetry: () => restart(),
   onNext: () => startSolo(Math.min(levelIndex + 1, levels.length - 1)),
-  onOpenMenu: () => {
-    phase = 'menu';
-    introLevel = -1; // picking a level from the menu flies in again
-    ui.showMenu(levels, loadProgress());
-  },
+  onOpenMenu: () => openMenu(),
+  onTitle: () => showTitle(),
 });
+
+function openMenu() {
+  phase = 'menu';
+  introLevel = -1; // picking a level from the menu flies in again
+  ui.showMenu(levels, loadProgress());
+}
+
+const TITLE_INDEX = -2; // levelIndex while the title scene is up (not -1, so it gets a fly-in)
+const titleScene = titleLevel();
+
+function showTitle() {
+  party = null;
+  loadLevel(TITLE_INDEX);
+  phase = 'title';
+  ui.showTitle();
+}
 
 function blockStates(): BlockState[] {
   return blocks.map((b) => ({ type: b.type, status: b.status, multiplier: b.multiplier }));
@@ -378,7 +436,8 @@ function startParty(index: number, players: number) {
 }
 
 function restart() {
-  if (party) startParty(levelIndex, party.players);
+  if (levelIndex === TITLE_INDEX) showTitle();
+  else if (party) startParty(levelIndex, party.players);
   else loadLevel(levelIndex);
 }
 
@@ -486,7 +545,8 @@ function clearLevel() {
 function loadLevel(index: number) {
   clearLevel();
   levelIndex = index;
-  level = levels[index];
+  level = index === TITLE_INDEX ? titleScene : levels[index];
+  applyTheme(level.theme);
   throwsUsed = 0;
   simTime = 0;
   lastMotion = 0;
@@ -587,6 +647,7 @@ function loadLevel(index: number) {
   syncRender(1);
   refreshStats();
   ui.setLevel(level);
+  if (index !== TITLE_INDEX) ui.hideTitle();
   refreshParty();
   renderer.shadowMap.needsUpdate = true;
 }
@@ -599,7 +660,12 @@ function frameCamera() {
     maxX = Math.max(maxX, Math.abs(b.pos[0]) + b.size[0] / 2);
   }
   const top = level.platform.top;
-  const dist = Math.min(Math.max(9 + maxY * 1.4 + maxX * 1.2, 11), 26);
+  // far enough to fit the structure's width at this aspect ratio too (wide levels, portrait phones)
+  const halfWidthTan = Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)) * camera.aspect;
+  const fitWidth = (maxX + 1) / halfWidthTan + 2;
+  // the wide title may need more room than the usual zoom limit on a portrait phone
+  controls.maxDistance = Math.max(MAX_ZOOM_OUT, fitWidth + 1);
+  const dist = Math.min(Math.max(9 + maxY * 1.4 + maxX * 1.2, 11, fitWidth), controls.maxDistance - 1);
   controls.target.set(0, top + maxY / 2, 0);
   camera.position.set(0, top + maxY * 0.7 + 2.5, dist);
   controls.update();
@@ -765,7 +831,7 @@ function countChain() {
   if (gained === 0) return;
   bonus += gained;
   ui.callout(`Chain ×${chainLength}!`, `+${gained}`);
-  slowUntil = performance.now() + 1000;
+  slowUntil = lastFrameAt + 1000;
 }
 
 function detonate(source: Blaster) {
@@ -1198,7 +1264,8 @@ let throwPointer: number | null = null;
 const activeTouches = new Set<number>();
 
 function canThrow() {
-  return phase === 'playing' && throwsLeft() > 0 && !turnActive; // party: one action per turn
+  // party: one action per turn; the title scene takes free throws
+  return (phase === 'playing' || phase === 'title') && throwsLeft() > 0 && !turnActive;
 }
 
 function isGrabTool() {
@@ -1406,7 +1473,7 @@ function flickForTier(tier: number) {
 }
 
 function spaceDown() {
-  if (phase !== 'playing') return;
+  if (phase !== 'playing' && phase !== 'title') return;
   if (isGrabTool()) {
     if (grab.entity) grab.entity = null;
     else if (canThrow()) beginGrab(aim.x, aim.y);
@@ -1432,7 +1499,7 @@ function spaceUp() {
 
 addEventListener('keydown', (ev) => {
   unlockAudio();
-  if (introT < 1 && phase === 'playing') {
+  if (introT < 1 && (phase === 'playing' || phase === 'title')) {
     skipIntro();
     if (ev.code === 'Space') ev.preventDefault();
     return;
@@ -1669,30 +1736,34 @@ function updateTrails() {
   }
 }
 
-// ---------- debug panel ----------
-const gui = new GUI({ title: 'Debug' });
-gui.add(params, 'gravity', 1, 30).onChange((g: number) => (world.gravity = { x: 0, y: -g, z: 0 }));
-gui.add(params, 'massScale', 0.25, 4);
-gui.add(params, 'radiusScale', 0.5, 2);
-const power = gui.addFolder('Power curve (m/s per tier)');
-power.add(params, 'speedTap', 1, 40);
-power.add(params, 'speedLight', 1, 40);
-power.add(params, 'speedMedium', 1, 40);
-power.add(params, 'speedFull', 1, 60);
-const flick = gui.addFolder('Flick thresholds (px/s)');
-flick.add(params, 'flickLight', 100, 4000);
-flick.add(params, 'flickMedium', 500, 8000);
-flick.add(params, 'flickFull', 1000, 15000);
-gui.add(params, 'upwardBias', 0, 0.3);
-const grabGui = gui.addFolder('Grab spring');
-grabGui.add(params, 'grabStiffness', 5, 200);
-grabGui.add(params, 'grabDamping', 1, 40);
-grabGui.add(params, 'grabMaxAccel', 5, 100);
-gui
-  .add(params, 'solverIterations', 1, 30, 1)
-  .onChange((n: number) => (world.integrationParameters.numSolverIterations = n));
-gui.add(params, 'restart').name('Restart level (R)');
-gui.close();
+// ---------- debug panel (development builds only) ----------
+if (import.meta.env.DEV) {
+  const { default: GUI } = await import('lil-gui');
+  const gui = new GUI({ title: 'Debug' });
+  gui.add(params, 'gravity', 1, 30).onChange((g: number) => (world.gravity = { x: 0, y: -g, z: 0 }));
+  gui.add(params, 'massScale', 0.25, 4);
+  gui.add(params, 'radiusScale', 0.5, 2);
+  const power = gui.addFolder('Power curve (m/s per tier)');
+  power.add(params, 'speedTap', 1, 40);
+  power.add(params, 'speedLight', 1, 40);
+  power.add(params, 'speedMedium', 1, 40);
+  power.add(params, 'speedFull', 1, 60);
+  const flick = gui.addFolder('Flick thresholds (px/s)');
+  flick.add(params, 'flickLight', 100, 4000);
+  flick.add(params, 'flickMedium', 500, 8000);
+  flick.add(params, 'flickFull', 1000, 15000);
+  gui.add(params, 'upwardBias', 0, 0.3);
+  const grabGui = gui.addFolder('Grab spring');
+  grabGui.add(params, 'grabStiffness', 5, 200);
+  grabGui.add(params, 'grabDamping', 1, 40);
+  grabGui.add(params, 'grabMaxAccel', 5, 100);
+  gui
+    .add(params, 'solverIterations', 1, 30, 1)
+    .onChange((n: number) => (world.integrationParameters.numSolverIterations = n));
+  gui.add(params, 'restart').name('Restart level (R)');
+  gui.close();
+  document.body.classList.add('dev');
+}
 
 if (import.meta.env.PROD && 'serviceWorker' in navigator) {
   navigator.serviceWorker.register(`${import.meta.env.BASE_URL}sw.js`).catch(() => {
@@ -1702,16 +1773,21 @@ if (import.meta.env.PROD && 'serviceWorker' in navigator) {
 
 // ---------- main loop ----------
 initMusic();
-loadLevel(0);
-phase = 'menu';
-ui.showMenu(levels, loadProgress());
+showTitle();
 
-let last = performance.now();
+let lastFrameAt = performance.now();
 let acc = 0;
+let captureMode = false; // a capture script drives tick() frame by frame instead of the browser
+
 function frame(now: number) {
-  const dt = Math.min((now - last) / 1000, 0.25);
+  if (!captureMode) tick(now);
+  requestAnimationFrame(frame);
+}
+
+function tick(now: number) {
+  const dt = Math.min((now - lastFrameAt) / 1000, 0.25);
   acc += now < slowUntil ? dt * SLOWMO_SCALE : dt;
-  last = now;
+  lastFrameAt = now;
   let steps = 0;
   while (acc >= STEP && steps < MAX_STEPS_PER_FRAME) {
     stepPhysics();
@@ -1750,7 +1826,6 @@ function frame(now: number) {
   camera.position.add(pushOffset); // shake and push-in move only the rendered frame, not the orbit state
   renderer.render(scene, camera);
   camera.position.sub(pushOffset);
-  requestAnimationFrame(frame);
 }
 requestAnimationFrame(frame);
 
@@ -1783,4 +1858,11 @@ requestAnimationFrame(frame);
   },
   holding: () => grab.entity?.type ?? null,
   aim,
+  showTitle,
+  /** Capture mode stops the browser-driven loop and hides the UI; advance with frameStep(ms). */
+  capture: (on: boolean) => {
+    captureMode = on;
+    document.body.classList.toggle('capture', on);
+  },
+  frameStep: (ms: number) => tick(lastFrameAt + ms),
 };

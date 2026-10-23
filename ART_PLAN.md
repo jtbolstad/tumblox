@@ -84,8 +84,9 @@ Driven by the existing `theme` field in `src/level.ts`. Props are decoration onl
 | Castle Hill            | morning sky, green hill                 | banners, towers, drawbridge, hay bales             | recorder-and-lute jig in 6/8              |
 | Dusty Gulch            | hot orange sky, red rock mesa           | cacti, barrels, water tower, cow skull             | banjo hoedown in 2/4                      |
 | Spooky Manor           | purple night, moon                      | tombstones, pumpkins, dead trees, manor silhouette | minor harpsichord waltz with a "theremin" |
-- [ ] Theme system: sky colours, island materials, prop set, distant silhouette ring, music track, ambient sound bed
-- [ ] All five themes; re-theme existing levels and group them into worlds (ties in with Explore/Adventure in `PLAN.md` Phase 2)
+- [x] Theme system: sky colours, island materials, light, pedestal, prop set, distant scenery (`src/themes.ts`, `src/props.ts`); music track and ambient sound bed per world moved to stage E
+- [x] All five themes; existing levels regrouped into worlds (Meadow 1–6, Tiki 7–12, Castle 13–18, Gulch 19–24, Manor 25–28); the Explore/Adventure structure in `PLAN.md` Phase 2 is still open
+- [x] World map with level isles instead of the card grid (moved here from stage F)
 
 ### D. Characters (cube animals)
 
@@ -144,14 +145,14 @@ Needs a behaviour scheduler, simple path-finding on block tops, per-kind action 
 | Bonk Island  | short and silly                       |
 | Stackabout   | stacking plus knockabout              |
 | Crumble Cove | destruction plus a world name         |
-- [ ] Shortlist checked; the user picks a name
-- [ ] Logo: SVG wordmark whose letters are stacked toy blocks, one tipping over; regenerate the PWA icons in `public/` from it
-- [ ] Font: chunky rounded open-licensed font (Fredoka or Baloo 2, OFL), self-hosted so it works offline
-- [ ] Title screen: a live 3D scene where you can knock over the logo blocks
-- [ ] World map with level islands instead of the card grid
-- [ ] Throws shown as ball icons; animated medal drop on the result screen
-- [ ] Debug HUD and lil-gui only in development (`import.meta.env.DEV`)
-- [ ] Launch page as a second Vite page (`about.html`): hero clip captured with Playwright, feature list, Play button, credits, and "Inspired by Boom Blox (EA, 2008). Not affiliated."
+- [x] Shortlist checked; the user picks a name: **Tumble Isle** (2026-10-24; `.com` and `.io` unregistered at the time; still needs a trademark search before launch)
+- [x] Logo: SVG wordmark whose letters are stacked toy blocks, one tipping over; PWA icons regenerated (`pnpm brand`, letters in `src/glyphs.ts`)
+- [x] Font: chunky rounded open-licensed font (Fredoka or Baloo 2, OFL), self-hosted so it works offline
+- [x] Title screen: a live 3D scene where you can knock over the logo blocks (`src/title.ts`)
+- [x] World map with level islands instead of the card grid — done in stage C
+- [x] Throws shown as ball icons; animated medal drop on the result screen
+- [x] Debug HUD and lil-gui only in development (`import.meta.env.DEV`)
+- [x] Launch page as a second Vite page (`about.html`): hero clip captured with Playwright (`pnpm hero`), feature list, Play button, credits, and "Inspired by Boom Blox (EA, 2008). Not affiliated."
 
 ## Performance budget
 

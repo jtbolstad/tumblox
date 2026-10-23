@@ -86,7 +86,7 @@ License note: RepoBlocks is GPL-3.0, so copying its code makes the clone GPL too
 
 ## Game design draft
 
-Working title: **Blox Topple** (placeholder — pick an original name before publishing). One level = one structure, one goal, a limited number of throws, a medal at the end; a level should take 20–90 seconds.
+Name: **Tumble Isle** (chosen 2026-10-24, was the working title Blox Topple; trademark search still to do). One level = one structure, one goal, a limited number of throws, a medal at the end; a level should take 20–90 seconds.
 
 **Core loop**
 1. Look: orbit the camera around the structure (drag with right button / two fingers).

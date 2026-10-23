@@ -1,7 +1,7 @@
 {
   "id": "bullseye",
   "name": "Bullseye",
-  "theme": "meadow",
+  "theme": "gulch",
   "tool": "ball",
   "throws": 3,
   "goal": {

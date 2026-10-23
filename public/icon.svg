@@ -1,8 +1,30 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
-  <title>Blox Topple</title>
-  <rect width="512" height="512" rx="96" fill="#8ecae6"/>
-  <rect x="96" y="320" width="144" height="96" rx="12" fill="#e9c46a"/>
-  <rect x="272" y="320" width="144" height="96" rx="12" fill="#e9c46a"/>
-  <rect x="184" y="224" width="144" height="96" rx="12" fill="#3da5ff"/>
-  <rect x="112" y="120" width="144" height="96" rx="12" fill="#e63946" transform="rotate(-18 184 168)"/>
+  <title>Tumble Isle</title>
+  <defs>
+    <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#4f9fd6"/>
+      <stop offset="1" stop-color="#d4eef8"/>
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" fill="url(#sky)"/>
+  <path d="M120 372 Q256 344 392 372 L330 446 Q256 470 182 446 Z" fill="#b08968" stroke="#023047" stroke-width="6"/>
+  <ellipse cx="256" cy="372" rx="136" ry="26" fill="#7bc47f" stroke="#023047" stroke-width="6"/>
+  <g>
+    <rect x="160" y="270" width="96" height="96" rx="19.200000000000003" fill="#023047"/>
+    <rect x="162" y="272" width="92" height="92" rx="18.200000000000003" fill="#e9c46a"/>
+    <rect x="162" y="339.12" width="92" height="24.880000000000003" rx="18.200000000000003" fill="#000" opacity="0.18"/>
+    <rect x="177.28" y="285.36" width="28.799999999999997" height="13.440000000000001" rx="6.720000000000001" fill="#fff" opacity="0.55"/>
+  </g>
+  <g>
+    <rect x="256" y="270" width="96" height="96" rx="19.200000000000003" fill="#023047"/>
+    <rect x="258" y="272" width="92" height="92" rx="18.200000000000003" fill="#3da5ff"/>
+    <rect x="258" y="339.12" width="92" height="24.880000000000003" rx="18.200000000000003" fill="#000" opacity="0.18"/>
+    <rect x="273.28" y="285.36" width="28.799999999999997" height="13.440000000000001" rx="6.720000000000001" fill="#fff" opacity="0.55"/>
+  </g>
+  <g transform="rotate(-22 256 270)">
+    <rect x="208" y="174" width="96" height="96" rx="19.200000000000003" fill="#023047"/>
+    <rect x="210" y="176" width="92" height="92" rx="18.200000000000003" fill="#e63946"/>
+    <rect x="210" y="243.12" width="92" height="24.880000000000003" rx="18.200000000000003" fill="#000" opacity="0.18"/>
+    <rect x="225.28" y="189.36" width="28.799999999999997" height="13.440000000000001" rx="6.720000000000001" fill="#fff" opacity="0.55"/>
+  </g>
 </svg>

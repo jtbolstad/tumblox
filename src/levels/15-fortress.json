@@ -1,7 +1,7 @@
 {
   "id": "fortress",
   "name": "Fortress",
-  "theme": "meadow",
+  "theme": "castle",
   "tool": "bomb",
   "throws": 3,
   "goal": {

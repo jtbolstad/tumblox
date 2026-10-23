@@ -1,7 +1,7 @@
 {
   "id": "chain",
   "name": "Chain Reaction",
-  "theme": "meadow",
+  "theme": "tiki",
   "tool": "ball",
   "throws": 2,
   "goal": {

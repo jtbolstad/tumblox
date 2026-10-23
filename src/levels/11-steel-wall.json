@@ -1,7 +1,7 @@
 {
   "id": "steel-wall",
   "name": "Steel Wall",
-  "theme": "meadow",
+  "theme": "tiki",
   "tool": "heavy",
   "throws": 3,
   "goal": {

@@ -8,14 +8,16 @@ const outDir = process.argv[2] ?? 'shots';
 const executablePath = process.env.CHROME ?? '/usr/bin/chromium';
 // [file name, level index, physics steps after a full-power throw at the centre (0 = no throw)]
 const SHOTS = [
-  ['01-gem-tower', 0, 0],
-  ['06-first-boom', 5, 0],
-  ['06-first-boom-blast', 5, 40],
-  ['07-chain-blast', 6, 70],
-  ['15-fortress', 14, 0],
-  ['17-jenga', 16, 0],
-  ['21-cloud-nine', 20, 0],
-  ['25-zap-tower', 24, 0],
+  ['meadow-01-gem-tower', 0, 0],
+  ['meadow-06-first-boom-blast', 5, 40],
+  ['tiki-07-chain', 6, 0],
+  ['tiki-12-ice-rink', 11, 0],
+  ['castle-15-fortress', 14, 0],
+  ['castle-17-jenga', 16, 0],
+  ['gulch-19-bullseye', 18, 0],
+  ['gulch-21-cloud-nine', 20, 0],
+  ['manor-25-zap-tower', 24, 0],
+  ['manor-28-soak-it', 27, 0],
 ];
 
 mkdirSync(outDir, { recursive: true });

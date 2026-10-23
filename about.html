@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Tumble Isle — throw, blast and pull blocks</title>
+    <meta name="description" content="A free browser physics puzzle game: throw, blast and pull blocks until the island tumbles. Plays on desktop and phone, offline too." />
+    <meta property="og:title" content="Tumble Isle" />
+    <meta property="og:description" content="Throw, blast and pull blocks until the island tumbles. Free in your browser." />
+    <meta property="og:image" content="./hero.jpg" />
+    <meta name="theme-color" content="#8ecae6" />
+    <link rel="icon" href="./icon.svg" type="image/svg+xml" />
+    <style>
+      :root { --ink: #023047; --accent: #fb8500; --sky-top: #4f9fd6; --sky: #d4eef8; --card: rgba(255, 255, 255, 0.85); }
+      * { box-sizing: border-box; }
+      body { margin: 0; font-family: 'Fredoka Variable', system-ui, sans-serif; color: var(--ink); background: linear-gradient(var(--sky-top), var(--sky) 60%, #e9f6fb); min-height: 100vh; }
+      main { max-width: 980px; margin: 0 auto; padding: 32px 16px 48px; }
+      header { text-align: center; }
+      header img { width: min(640px, 100%); filter: drop-shadow(0 6px 8px rgba(2, 48, 71, 0.25)); }
+      .tagline { font-size: 1.4em; font-weight: 600; margin: 8px 0 20px; }
+      .play { display: inline-block; font-weight: 700; font-size: 1.4em; color: #fff; background: var(--accent); text-decoration: none; padding: 14px 40px; border-radius: 16px; box-shadow: 0 5px 0 #c96a00; }
+      .play:hover { filter: brightness(1.05); }
+      .play:focus-visible { outline: 3px solid var(--ink); outline-offset: 3px; }
+      .sub { font-size: 0.95em; opacity: 0.75; margin-top: 10px; }
+      video { display: block; width: 100%; margin: 32px 0; border-radius: 18px; box-shadow: 0 10px 30px rgba(2, 48, 71, 0.25); background: var(--sky); }
+      h2 { text-align: center; margin: 40px 0 16px; }
+      .features { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 14px; }
+      .features div { background: var(--card); border-radius: 14px; padding: 16px 18px; }
+      .features h3 { margin: 0 0 6px; }
+      .features p { margin: 0; line-height: 1.4; }
+      .controls { background: var(--card); border-radius: 14px; padding: 16px 22px; line-height: 1.6; }
+      footer { margin-top: 40px; text-align: center; font-size: 0.9em; opacity: 0.8; line-height: 1.6; }
+      footer a { color: inherit; }
+      @media (prefers-reduced-motion: reduce) { video { display: none; } }
+    </style>
+  </head>
+  <body>
+    <main>
+      <header>
+        <img src="./logo.svg" alt="Tumble Isle" />
+        <p class="tagline">Throw, blast and pull blocks until the island tumbles.</p>
+        <a class="play" href="./">Play now</a>
+        <p class="sub">Free in your browser · desktop and phone · works offline</p>
+      </header>
+
+      <video src="./hero.mp4" poster="./hero.jpg" autoplay muted loop playsinline aria-label="Gameplay: a ball hits the title and a chain of bombs blows it apart"></video>
+
+      <h2>What you do</h2>
+      <section class="features">
+        <div><h3>Throw</h3><p>Flick to throw. Faster flicks throw harder. Topple the gems, score the gold, clear the board.</p></div>
+        <div><h3>Blast</h3><p>Bombs, chemicals and fireworks set each other off. Long chains earn bonus points and slow time down.</p></div>
+        <div><h3>Pull</h3><p>Grab a block and ease it out of the tower without bringing the whole thing down.</p></div>
+        <div><h3>16 kinds of block</h3><p>Wood, steel, ice, gems, clouds that float away, fragile blocks that shatter, blocks that play a tune.</p></div>
+        <div><h3>Party on one screen</h3><p>Two to four players take turns: a score duel, or a Jenga-off where the last one standing wins.</p></div>
+        <div><h3>Lasers and water</h3><p>Zap single blocks with a laser, or hose a wall until it gives way.</p></div>
+      </section>
+
+      <h2>Controls</h2>
+      <section class="controls">
+        <strong>Mouse or touch:</strong> flick to throw · right-drag or two fingers to look around · pinch or wheel to zoom<br />
+        <strong>Keyboard:</strong> arrows aim · hold Space to charge, let go to throw · Q/E turn · Z/X zoom · R restart
+      </section>
+
+      <footer>
+        <p>Built with <a href="https://threejs.org">three.js</a> (MIT) and <a href="https://rapier.rs">Rapier</a> (Apache-2.0). Font: Fredoka (SIL Open Font License). Music and sound are synthesised in code.</p>
+        <p>Inspired by Boom Blox (EA, 2008). Not affiliated with or endorsed by Electronic Arts.</p>
+      </footer>
+    </main>
+    <script type="module" src="/src/about.ts"></script>
+  </body>
+</html>

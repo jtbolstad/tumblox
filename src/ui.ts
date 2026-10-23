@@ -2,12 +2,25 @@ import type { Goal, Level } from './level';
 import { MAX_PLAYERS, type PartyMode, partyModeFor } from './party';
 import type { LevelProgress } from './progress';
 import type { Medal } from './rules';
+import { THEME_IDS, THEMES } from './themes';
 import { TOOLS } from './tools';
 
 function el<T extends HTMLElement>(id: string): T {
   const node = document.getElementById(id);
   if (!node) throw new Error(`missing #${id} in index.html`);
   return node as T;
+}
+
+const MAX_BALL_ICONS = 10;
+
+const css = (color: number) => `#${color.toString(16).padStart(6, '0')}`;
+
+/** True for colours dark enough to need white text on them. */
+function isDark(color: number) {
+  const r = (color >> 16) & 255;
+  const g = (color >> 8) & 255;
+  const b = color & 255;
+  return 0.299 * r + 0.587 * g + 0.114 * b < 140;
 }
 
 const PARTY_MODE_NAME: Record<PartyMode, string> = { duel: 'Score duel', jengaOff: 'Jenga-off' };
@@ -33,6 +46,7 @@ export interface UiHandlers {
   onRetry: () => void;
   onNext: () => void;
   onOpenMenu: () => void;
+  onTitle: () => void;
 }
 
 export function createUi(handlers: UiHandlers) {
@@ -48,6 +62,11 @@ export function createUi(handlers: UiHandlers) {
   let toastTimer: ReturnType<typeof setTimeout> | undefined;
 
   el('menu-btn').addEventListener('click', handlers.onOpenMenu);
+  el('play-btn').addEventListener('click', handlers.onOpenMenu);
+  el('title-btn').addEventListener('click', handlers.onTitle);
+  const title = el('title');
+  let ballColor = '#ffb703';
+  let countsBalls = true; // false for the hose, whose budget is seconds of water
   el('levels-btn').addEventListener('click', handlers.onOpenMenu);
   el('retry-btn').addEventListener('click', handlers.onRetry);
   el('next-btn').addEventListener('click', handlers.onNext);
@@ -70,24 +89,55 @@ export function createUi(handlers: UiHandlers) {
         return b;
       }),
     );
+    // world map: one panel per world in its sky colours, levels as little floating isles
     grid.replaceChildren(
-      ...levels.map((level, i) => {
-        const p = progress[level.id];
-        const mode = partyModeFor(level);
-        const card = document.createElement('button');
-        card.type = 'button';
-        card.className = 'card';
-        card.innerHTML = `<span class="n">${i + 1}</span><span>${level.name}</span><span class="m"></span>`;
-        const m = card.querySelector('.m') as HTMLElement;
-        if (players > 1) {
-          m.textContent = mode ? PARTY_MODE_NAME[mode] : 'solo only';
-          card.disabled = mode === null;
-        } else if (p?.medal) {
-          m.textContent = `${MEDAL_ICON[p.medal]} ${p.best}`;
-          m.className = `m medal-${p.medal}`;
+      ...THEME_IDS.flatMap((themeId) => {
+        const entries = levels.flatMap((level, i) => (level.theme === themeId ? [{ level, i }] : []));
+        if (entries.length === 0) return [];
+        const t = THEMES[themeId];
+        const world = document.createElement('section');
+        world.className = 'world';
+        world.style.setProperty('--sky-top', css(t.sky.top));
+        world.style.setProperty('--sky-horizon', css(t.sky.horizon));
+        world.style.setProperty('--ground', css(t.ground));
+        world.style.setProperty('--earth', css(t.earth));
+        world.style.setProperty('--isle-ink', isDark(t.ground) ? '#fff' : '#023047');
+        world.style.setProperty('--title-ink', isDark(t.sky.top) ? '#fff' : '#023047');
+        const cleared = entries.filter(({ level }) => progress[level.id]).length;
+        const golds = entries.filter(({ level }) => progress[level.id]?.medal === 'gold').length;
+        const head = document.createElement('header');
+        head.append(
+          Object.assign(document.createElement('h2'), { textContent: t.name }),
+          Object.assign(document.createElement('span'), {
+            className: 'tally',
+            textContent: `${cleared}/${entries.length} cleared${golds ? ` · ${MEDAL_ICON.gold} ${golds}` : ''}`,
+          }),
+        );
+        const isles = document.createElement('div');
+        isles.className = 'isles';
+        for (const { level, i } of entries) {
+          const p = progress[level.id];
+          const mode = partyModeFor(level);
+          const isle = document.createElement('button');
+          isle.type = 'button';
+          isle.className = 'isle';
+          const m = Object.assign(document.createElement('span'), { className: 'm' });
+          isle.append(
+            Object.assign(document.createElement('span'), { className: 'n', textContent: String(i + 1) }),
+            Object.assign(document.createElement('span'), { className: 'name', textContent: level.name }),
+            m,
+          );
+          if (players > 1) {
+            m.textContent = mode ? PARTY_MODE_NAME[mode] : 'solo only';
+            isle.disabled = mode === null;
+          } else if (p?.medal) {
+            m.textContent = `${MEDAL_ICON[p.medal]} ${p.best}`;
+          }
+          isle.addEventListener('click', () => handlers.onSelect(i, players));
+          isles.append(isle);
         }
-        card.addEventListener('click', () => handlers.onSelect(i, players));
-        return card;
+        world.append(head, isles);
+        return [world];
       }),
     );
   }
@@ -97,6 +147,7 @@ export function createUi(handlers: UiHandlers) {
       shown = { levels, progress };
       renderMenu();
       result.hidden = true;
+      title.hidden = true;
       menu.hidden = false;
     },
     /** Scoreboard in the HUD; null clears it for solo play. */
@@ -149,7 +200,19 @@ export function createUi(handlers: UiHandlers) {
           : TOOLS[level.tool].laser
             ? 'Shots'
             : 'Throws';
+      ballColor = `#${TOOLS[level.tool].color.toString(16).padStart(6, '0')}`;
+      countsBalls = !TOOLS[level.tool].hose;
       result.hidden = true;
+    },
+    showTitle() {
+      menu.hidden = true;
+      result.hidden = true;
+      title.hidden = false;
+      document.body.classList.add('on-title');
+    },
+    hideTitle() {
+      title.hidden = true;
+      document.body.classList.remove('on-title');
     },
     /** Floating score text at a screen position; removes itself when its animation ends. */
     popup(text: string, x: number, y: number, negative: boolean, color?: string) {
@@ -163,7 +226,22 @@ export function createUi(handlers: UiHandlers) {
       document.body.append(node);
     },
     setStats(throwsLeft: number, score: number) {
-      el('throws').textContent = throwsLeft >= 999 ? '∞' : String(throwsLeft);
+      const throws = el('throws');
+      if (countsBalls && throwsLeft > 0 && throwsLeft <= MAX_BALL_ICONS) {
+        // one ball per throw left, so the budget reads at a glance
+        throws.replaceChildren(
+          ...Array.from({ length: throwsLeft }, () => {
+            const ball = document.createElement('span');
+            ball.className = 'ball-icon';
+            ball.style.background = ballColor;
+            return ball;
+          }),
+        );
+        throws.setAttribute('aria-label', String(throwsLeft));
+      } else {
+        throws.textContent = throwsLeft >= 999 ? '∞' : String(throwsLeft);
+        throws.removeAttribute('aria-label');
+      }
       el('score').textContent = String(score);
     },
     showResult(opts: {
@@ -178,6 +256,11 @@ export function createUi(handlers: UiHandlers) {
       el('result-title').textContent = opts.won ? 'Level cleared!' : (opts.lostReason ?? 'Out of throws');
       const medal = el('result-medal');
       medal.textContent = opts.won ? (opts.medal ? MEDAL_ICON[opts.medal] : 'No medal') : '';
+      medal.classList.remove('drop');
+      if (opts.won && opts.medal) {
+        void medal.offsetWidth; // restart the drop animation
+        medal.classList.add('drop');
+      }
       el('result-detail').textContent = opts.won
         ? `Score ${opts.score} · Best ${opts.best}`
         : 'Give it another go.';

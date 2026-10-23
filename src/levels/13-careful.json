@@ -1,7 +1,7 @@
 {
   "id": "careful",
   "name": "Careful Now",
-  "theme": "meadow",
+  "theme": "castle",
   "tool": "ball",
   "throws": 3,
   "goal": {

@@ -1,5 +1,5 @@
 // Offline support: serve cached files first, refresh them in the background.
-const CACHE = 'blox-topple-v1';
+const CACHE = 'tumble-isle-v1';
 
 self.addEventListener('install', (event) => {
   event.waitUntil(

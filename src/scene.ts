@@ -1,8 +1,9 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 
-/** The toy-diorama backdrop: gradient sky, clouds, a floating island and the lights. */
-export const SKY = { top: 0x4f9fd6, horizon: 0xd4eef8, bottom: 0xa9d3ea };
+import { THEMES, type ThemeDef } from './themes';
+
+/** The toy-diorama backdrop: gradient sky, clouds, a floating island and the lights. Colours come per world. */
 export const ISLAND_RADIUS = 24;
 /** Invisible floor far below the island that catches blocks knocked into the void, so they can sleep. */
 export const CATCH_FLOOR_Y = -25;
@@ -19,12 +20,12 @@ export function seeded(seed: number) {
   };
 }
 
-export function makeSky(radius = 150): THREE.Mesh {
+export function makeSky(radius = 150, colors = THEMES.meadow.sky): THREE.Mesh {
   const mat = new THREE.ShaderMaterial({
     uniforms: {
-      top: { value: new THREE.Color(SKY.top) },
-      horizon: { value: new THREE.Color(SKY.horizon) },
-      bottom: { value: new THREE.Color(SKY.bottom) },
+      top: { value: new THREE.Color(colors.top) },
+      horizon: { value: new THREE.Color(colors.horizon) },
+      bottom: { value: new THREE.Color(colors.bottom) },
     },
     vertexShader: /* glsl */ `
       varying vec3 vDir;
@@ -56,6 +57,13 @@ export function makeSky(radius = 150): THREE.Mesh {
 }
 
 /** A ring of low-poly cloud puffs around the island, merged into one draw call. */
+export function setSkyColors(sky: THREE.Mesh, colors: ThemeDef['sky']) {
+  const u = (sky.material as THREE.ShaderMaterial).uniforms;
+  u.top.value.set(colors.top);
+  u.horizon.value.set(colors.horizon);
+  u.bottom.value.set(colors.bottom);
+}
+
 export function makeClouds(): THREE.Mesh {
   const rand = seeded(7);
   const parts: THREE.BufferGeometry[] = [];
@@ -117,11 +125,11 @@ function grassTexture(): THREE.CanvasTexture {
 }
 
 /** Grassy top (surface at y = 0) over a rocky, tapering underside. */
-export function makeIsland(): THREE.Group {
+export function makeIsland(theme: ThemeDef): THREE.Group {
   const island = new THREE.Group();
   const top = new THREE.Mesh(
     new THREE.CylinderGeometry(ISLAND_RADIUS, ISLAND_RADIUS * 0.98, 1.2, 72),
-    new THREE.MeshStandardMaterial({ color: 0x7bc47f, map: grassTexture(), roughness: 1 }),
+    new THREE.MeshStandardMaterial({ color: theme.ground, map: grassTexture(), roughness: 1 }),
   );
   top.position.y = -0.6;
   top.receiveShadow = true;
@@ -132,8 +140,8 @@ export function makeIsland(): THREE.Group {
   under.translate(0, -1.2 - 8, 0);
   const pos = under.getAttribute('position') as THREE.BufferAttribute;
   const colors = new Float32Array(pos.count * 3);
-  const earth = new THREE.Color(0xb08968);
-  const deep = new THREE.Color(0x6d4c3d);
+  const earth = new THREE.Color(theme.earth);
+  const deep = new THREE.Color(theme.deep);
   const c = new THREE.Color();
   for (let i = 0; i < pos.count; i++) {
     const x = pos.getX(i);
@@ -185,30 +193,40 @@ export function makeContactShadow(width: number, depth: number): THREE.Mesh {
 }
 
 /** Image-based light from the sky colours, so metal, gems and bevels pick up soft reflections. */
-export function makeEnvironment(renderer: THREE.WebGLRenderer): THREE.Texture {
+export function makeEnvironment(renderer: THREE.WebGLRenderer, theme: ThemeDef): THREE.Texture {
   const env = new THREE.Scene();
-  env.add(makeSky(50));
+  env.add(makeSky(50, theme.sky));
   const ground = new THREE.Mesh(
     new THREE.CircleGeometry(40, 32).rotateX(-Math.PI / 2),
-    new THREE.MeshBasicMaterial({ color: 0xb8c49a }),
+    new THREE.MeshBasicMaterial({
+      color: new THREE.Color(theme.ground).lerp(new THREE.Color(0xd8c8a8), 0.6),
+    }),
   );
   ground.position.y = -2;
   env.add(ground);
   const pmrem = new THREE.PMREMGenerator(renderer);
   const tex = pmrem.fromScene(env, 0.04).texture;
   pmrem.dispose();
+  env.traverse((o) => {
+    if (o instanceof THREE.Mesh) {
+      o.geometry.dispose();
+      (o.material as THREE.Material).dispose();
+    }
+  });
   return tex;
 }
 
 export interface Lights {
   sun: THREE.DirectionalLight;
   rim: THREE.DirectionalLight;
+  hemi: THREE.HemisphereLight;
 }
 
 /** Warm key light (the one shadow caster), cool rim from behind, sky/grass hemisphere fill. */
 export function addLights(scene: THREE.Scene): Lights {
   // warm ground colour rather than grass green, so shaded block sides stay clean instead of olive
-  scene.add(new THREE.HemisphereLight(0xe8f4ff, 0xd8c8a8, 0.75));
+  const hemi = new THREE.HemisphereLight(0xe8f4ff, 0xd8c8a8, 0.75);
+  scene.add(hemi);
   const sun = new THREE.DirectionalLight(0xfff1d6, 2.6);
   sun.position.set(8, 16, 6);
   sun.castShadow = true;
@@ -220,5 +238,5 @@ export function addLights(scene: THREE.Scene): Lights {
   const rim = new THREE.DirectionalLight(0x9ad1ff, 1.1);
   rim.position.set(-7, 9, -12);
   scene.add(rim);
-  return { sun, rim };
+  return { sun, rim, hemi };
 }

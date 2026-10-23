@@ -1,4 +1,4 @@
-# Blox Topple — Boom Blox-inspired web game
+# Tumble Isle — Boom Blox-inspired web game
 
 Browser physics puzzle game inspired by Boom Blox (Wii, 2008): throw, grab and blast blocks to solve short puzzles.
 Full research, game design and phased plan: see `PLAN.md`. Work through it phase by phase; tick checkboxes in `PLAN.md` as tasks land.
@@ -23,12 +23,15 @@ Look/sound/feel pass (art, characters, music, name, logo, launch page): see `ART
 - Stacks spawn asleep; solver iterations 8+; low restitution.
 - `provencher/repoblocks` (GPL-3.0) is a reference — copying its code makes this project GPL. Ask before copying.
 
-## Commands (once scaffolded)
+## Commands
 
 - `pnpm dev` — dev server
-- `pnpm build` — production build
+- `pnpm build` — production build (game plus `about.html` launch page)
 - `pnpm test` — Vitest
+- `pnpm shots` — screenshots of fixed level views into `shots/` (after `pnpm build`; uses system Chromium)
+- `pnpm brand` — regenerate `public/logo.svg` and the app icons from `src/glyphs.ts`
+- `pnpm hero` — re-record the launch-page clip `public/hero.mp4` (after `pnpm build`; needs ffmpeg)
 
 ## Current status
 
-Phase 0 and 1 done; throw tuned for mouse (phone test over LAN still pending). Phase 2 mostly done: 16 block types, 7 tools (ball, heavy, bomb, bouncy, grab, laser, hose), Jenga goal, multiplier zones, slow-mo on chains, score pop-ups, synthesised sound and music (`src/audio.ts`, `src/music.ts`), particles and camera shake (`src/fx.ts`), 28 hand-editable JSON levels in `src/levels/`. Phase 4 mostly done: hot-seat party (score duel, Jenga-off; `src/party.ts`), laser/hose, quality setting and sleep-based physics pause, PWA (`public/`), keyboard play (arrows + Space, Q/E orbit), shape markings on blocks (`src/marks.ts`). Not yet: Explore tutorial sets and Adventure worlds (so also the last 2 worlds), final name/logo/art, launch page, playtest tuning of difficulty and medal thresholds (levels 25-28 are untuned). Sound, music, particles and the PWA install flow are untested by ear/eye on a real device.
+Phase 0 and 1 done; throw tuned for mouse (phone test over LAN still pending). Phase 2 mostly done: 16 block types, 7 tools (ball, heavy, bomb, bouncy, grab, laser, hose), Jenga goal, multiplier zones, slow-mo on chains, score pop-ups, synthesised sound and music (`src/audio.ts`, `src/music.ts`), particles and camera shake (`src/fx.ts`), 28 hand-editable JSON levels in `src/levels/`. Phase 4 mostly done: hot-seat party (score duel, Jenga-off; `src/party.ts`), laser/hose, quality setting and sleep-based physics pause, PWA (`public/`), keyboard play (arrows + Space, Q/E orbit), shape markings on blocks (`src/marks.ts`). Look pass (`ART_PLAN.md`): stages A (materials, light, island), B (effects, chain bonus, camera moves), F (name Tumble Isle, logo, title scene, launch page) and C (five worlds via level `theme`, props, world-map menu) done; D (characters) and E (music per world) to go. Not yet: Explore tutorial sets and Adventure worlds (so also the last 2 worlds), playtest tuning of difficulty and medal thresholds (levels 25-28 are untuned). Sound, music, particles and the PWA install flow are untested by ear/eye on a real device.

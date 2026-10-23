@@ -1,7 +1,7 @@
 {
   "id": "jenga-1",
   "name": "Jenga Jr.",
-  "theme": "meadow",
+  "theme": "castle",
   "tool": "grab",
   "throws": 6,
   "goal": {

@@ -1,7 +1,7 @@
 {
   "id": "bonus-lane",
   "name": "Bonus Lane",
-  "theme": "meadow",
+  "theme": "gulch",
   "tool": "ball",
   "throws": 3,
   "goal": {
