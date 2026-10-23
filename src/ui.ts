@@ -42,6 +42,7 @@ export function createUi(handlers: UiHandlers) {
   const playerRow = el('player-row');
   const partyBox = el('party');
   const toastBox = el('toast');
+  const calloutBox = el('callout');
   let players = 1;
   let shown: { levels: readonly Level[]; progress: Record<string, LevelProgress> } | null = null;
   let toastTimer: ReturnType<typeof setTimeout> | undefined;
@@ -109,6 +110,16 @@ export function createUi(handlers: UiHandlers) {
         }),
       );
     },
+    /** Big bouncing call-out for chain reactions, with a smaller line under it. */
+    callout(title: string, sub: string) {
+      calloutBox.replaceChildren(
+        Object.assign(document.createElement('div'), { className: 'title', textContent: title }),
+        Object.assign(document.createElement('div'), { className: 'sub', textContent: sub }),
+      );
+      calloutBox.classList.remove('show');
+      void calloutBox.offsetWidth; // restart the CSS animation
+      calloutBox.classList.add('show');
+    },
     /** Short message over the playfield that fades by itself. */
     toast(text: string) {
       toastBox.textContent = text;
@@ -141,10 +152,11 @@ export function createUi(handlers: UiHandlers) {
       result.hidden = true;
     },
     /** Floating score text at a screen position; removes itself when its animation ends. */
-    popup(text: string, x: number, y: number, negative: boolean) {
+    popup(text: string, x: number, y: number, negative: boolean, color?: string) {
       const node = document.createElement('div');
       node.className = negative ? 'popup negative' : 'popup';
       node.textContent = text;
+      if (color && !negative) node.style.setProperty('--pop', color);
       node.style.left = `${x}px`;
       node.style.top = `${y}px`;
       node.addEventListener('animationend', () => node.remove());

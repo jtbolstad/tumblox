@@ -65,13 +65,13 @@ Each theme adds its own sky, island and prop colours without touching block colo
 
 ### B. Juice and camera
 
-- [ ] Layered explosions on top of `Particles` / `Shake` in `src/fx.ts`: flash sprite, shockwave ring, smoke puffs, chunky debris (all pooled)
-- [ ] Dust puffs on heavy impacts, vanish "poof", gem sparkle trail, ball motion trail
-- [ ] Brief squash on blocks the ball hits
-- [ ] "CHAIN ×4!" counter with a combo bonus; slow-mo (`slowUntil`) adds a camera push-in for a bullet-time feel
-- [ ] Level intro: 2 s orbit fly-in ending at the `frameCamera()` pose, skippable with any input
-- [ ] Win: slow orbit behind the medal screen
-- [ ] Styled score pops: bigger, bouncier, coloured by block type
+- [x] Layered explosions on top of `Particles` / `Shake` in `src/fx.ts`: flash sprite, shockwave ring, smoke puffs, chunky debris (all pooled)
+- [x] Dust puffs on heavy impacts, vanish "poof", gem sparkle trail, ball motion trail
+- [x] Brief squash on blocks the ball hits
+- [x] "CHAIN ×4!" counter with a combo bonus (25 per blast from the third, `chainBonus` in `src/rules.ts`); slow-mo (`slowUntil`) adds a camera push-in for a bullet-time feel
+- [x] Level intro: 2 s orbit fly-in ending at the `frameCamera()` pose, skippable with any input
+- [x] Win: slow orbit behind the medal screen
+- [x] Styled score pops: bigger, bouncier, coloured by block type
 
 ### C. Worlds
 

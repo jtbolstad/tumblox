@@ -6,6 +6,7 @@ import {
   type BlockStatus,
   betterMedal,
   blockScore,
+  chainBonus,
   finalScore,
   goalMet,
   isSettled,
@@ -145,5 +146,15 @@ describe('multiplier zones', () => {
     expect(blockScore([{ type: 'point', status: 'fallen', multiplier: 3 }])).toBe(300);
     expect(blockScore([{ type: 'penalty', status: 'fallen', multiplier: 3 }])).toBe(-100);
     expect(blockScore([{ type: 'point', status: 'alive', multiplier: 3 }])).toBe(0);
+  });
+});
+
+describe('chain bonus', () => {
+  it('starts at the third blast and grows with the chain', () => {
+    expect([1, 2, 3, 4, 5].map(chainBonus)).toEqual([0, 0, 25, 50, 75]);
+  });
+
+  it('adds to the final score', () => {
+    expect(finalScore([b('gem', 'fallen')], 0, 75)).toBe(175);
   });
 });

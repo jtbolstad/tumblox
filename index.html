@@ -29,9 +29,25 @@
       .card .m { min-height: 1.2em; font-size: 0.85em; }
       .medal-gold { color: #d4a000; } .medal-silver { color: #8a94a0; } .medal-bronze { color: #b0663a; }
       .actions { display: flex; gap: 10px; justify-content: center; margin-top: 16px; flex-wrap: wrap; }
-      .popup { position: fixed; transform: translate(-50%, -50%); font-weight: 800; font-size: 1.6em; color: #fff; text-shadow: 0 2px 0 #fb8500, 0 0 6px rgba(0, 0, 0, 0.5); pointer-events: none; animation: popup-rise 1.1s ease-out forwards; }
-      .popup.negative { text-shadow: 0 2px 0 #d81159, 0 0 6px rgba(0, 0, 0, 0.5); }
-      @keyframes popup-rise { from { opacity: 1; margin-top: 0; } to { opacity: 0; margin-top: -60px; } }
+      .popup { --pop: #fb8500; position: fixed; transform: translate(-50%, -50%); font-weight: 900; font-size: 2em; color: #fff; text-shadow: 0 3px 0 var(--pop), 0 0 8px rgba(0, 0, 0, 0.45); pointer-events: none; animation: popup-rise 1.2s ease-out forwards; }
+      .popup.negative { --pop: #d81159; }
+      @keyframes popup-rise {
+        0% { opacity: 1; margin-top: 0; transform: translate(-50%, -50%) scale(0.4); }
+        18% { transform: translate(-50%, -50%) scale(1.3); }
+        32% { transform: translate(-50%, -50%) scale(1); }
+        100% { opacity: 0; margin-top: -70px; transform: translate(-50%, -50%) scale(1); }
+      }
+      #callout { position: fixed; top: 30%; left: 50%; transform: translate(-50%, -50%); text-align: center; pointer-events: none; opacity: 0; color: #fff; }
+      #callout .title { font-weight: 900; font-size: 3em; text-shadow: 0 4px 0 #e63946, 0 0 12px rgba(0, 0, 0, 0.4); }
+      #callout .sub { font-weight: 800; font-size: 1.6em; text-shadow: 0 3px 0 #fb8500, 0 0 8px rgba(0, 0, 0, 0.4); }
+      #callout.show { animation: callout 1.3s ease-out forwards; }
+      @keyframes callout {
+        0% { opacity: 0; transform: translate(-50%, -50%) scale(0.3) rotate(-8deg); }
+        15% { opacity: 1; transform: translate(-50%, -50%) scale(1.2) rotate(3deg); }
+        28% { transform: translate(-50%, -50%) scale(1) rotate(0); }
+        75% { opacity: 1; }
+        100% { opacity: 0; transform: translate(-50%, -60%) scale(1); }
+      }
       button:focus-visible { outline: 3px solid #023047; outline-offset: 2px; }
       button:disabled { opacity: 0.45; cursor: not-allowed; }
       .chip { background: #fff; color: var(--ink); border: 2px solid #ccd; padding: 6px 12px; }
@@ -46,7 +62,7 @@
       @keyframes toast { 0% { opacity: 0; } 12%, 70% { opacity: 1; } 100% { opacity: 0; } }
       #hint { position: fixed; bottom: 8px; left: 8px; right: 8px; text-align: center; font-size: 0.8em; opacity: 0.7; pointer-events: none; }
       @media (pointer: coarse) { #hint { display: none; } }
-      @media (prefers-reduced-motion: reduce) { .popup, #toast.show { animation-duration: 0.01s; } }
+      @media (prefers-reduced-motion: reduce) { .popup, #toast.show, #callout.show { animation-duration: 0.01s; } }
       .big { font-size: 2.2em; margin: 4px 0; }
     </style>
   </head>
@@ -84,6 +100,7 @@
       </div>
     </div>
     <div id="toast" role="status" aria-live="polite"></div>
+    <div id="callout" aria-hidden="true"></div>
     <div id="hint">Keys: arrows aim · hold Space to charge, release to throw · Q/E orbit · Z/X zoom · R restart</div>
     <script type="module" src="/src/main.ts"></script>
   </body>

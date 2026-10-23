@@ -238,6 +238,7 @@ flowchart TD
 - [x] Performance: instancing, body caps (300 blocks per level), sleep-based physics pause, shadow re-render only while moving, low/medium/high quality
 - [x] PWA (offline, installable), keyboard / one-button throw, colour-blind-safe block markings
 - [ ] Final name, logo, original art and music; launch page — see `ART_PLAN.md`
+- [ ] Later: phones as remotes for multiplayer (each player throws from their own phone while the game runs on a shared screen); needs a way to pair phones with the screen without our own server (e.g. WebRTC with a public signalling service) — design to be decided
 
 ## Risks, IP and open questions
 

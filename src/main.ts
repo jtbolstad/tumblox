@@ -17,7 +17,7 @@ import {
   unlockAudio,
 } from './audio';
 import { BLOCKS, type BlockType } from './blocks';
-import { disposeMesh, makeZoneMesh, Particles, Shake } from './fx';
+import { Debris, disposeMesh, makeZoneMesh, Particles, Puffs, Shake, Shockwaves } from './fx';
 import { type Level, loadBundledLevels } from './level';
 import { blockTexture } from './marks';
 import { initMusic, isMusicOn, setMusicOn } from './music';
@@ -36,6 +36,8 @@ import {
   type BlockState,
   type BlockStatus,
   blockScore,
+  CHAIN_WINDOW,
+  chainBonus,
   finalScore,
   isSettled,
   medalFor,
@@ -92,6 +94,13 @@ const QUALITY_SETTINGS: Record<Quality, { pixelRatio: number; shadowMap: number;
   high: { pixelRatio: 2, shadowMap: 2048, extras: true },
 };
 const SPARKLE_INTERVAL = 0.18; // s between gem glints
+const DUST_SPEED = 4; // m/s impact that kicks up dust
+const SQUASH_SPEED = 4; // m/s ball hit that squashes the block
+const SQUASH_SECONDS = 0.18;
+const TRAIL_SPEED = 6; // m/s above which balls leave a trail
+const SLOWMO_PUSH = 0.18; // share of the camera distance the view pushes in during slow-mo
+const INTRO_SECONDS = 2;
+const WIN_ORBIT_SPEED = 0.15; // rad/s while the result screen is up
 
 const params = {
   gravity: 9.81,
@@ -137,6 +146,7 @@ interface BlockEntity extends Entity {
   multiplier: number; // zone multiplier at its current floor position
   startPos: THREE.Vector3; // where the level placed it, to measure Jenga pulls and collapse
   grabbedOnce: boolean;
+  squash: number; // 1 right after a hard ball hit, decays to 0 (visual only)
 }
 
 interface BallEntity extends Entity {
@@ -243,6 +253,10 @@ let platformShadow: THREE.Mesh | null = null;
 const zoneMeshes: THREE.Mesh[] = [];
 const particles = new Particles(scene);
 const shake = new Shake();
+const smoke = new Puffs(scene, 160, THREE.NormalBlending);
+const glow = new Puffs(scene, 120, THREE.AdditiveBlending);
+const shockwaves = new Shockwaves(scene);
+const debris = new Debris(scene);
 
 const boxGeo = new RoundedBoxGeometry(1, 1, 1, 2, 0.07); // bevelled like a wooden toy block
 const hiddenMatrix = new THREE.Matrix4().makeScale(0, 0, 0);
@@ -301,6 +315,9 @@ let turnBaseline = 0; // party duel: block score when the turn started
 let spraying = false; // hose held down
 let beamLeft = 0; // s the laser beam stays visible
 let physicsIdle = true; // everything asleep: world.step is skipped
+let bonus = 0; // chain-reaction points this attempt
+let chainLength = 0;
+let lastBlastAt = Number.NEGATIVE_INFINITY;
 
 const ui = createUi({
   onSelect: (i, players) => {
@@ -312,6 +329,7 @@ const ui = createUi({
   onNext: () => startSolo(Math.min(levelIndex + 1, levels.length - 1)),
   onOpenMenu: () => {
     phase = 'menu';
+    introLevel = -1; // picking a level from the menu flies in again
     ui.showMenu(levels, loadProgress());
   },
 });
@@ -330,10 +348,15 @@ function throwsLeft() {
   return Math.max(0, Math.ceil(totalThrows() - throwsUsed - 1e-6));
 }
 
+/** Points so far: fallen blocks plus chain bonus. */
+function currentScore() {
+  return blockScore(blockStates()) + bonus;
+}
+
 let lastStats = '';
 function refreshStats() {
   const left = throwsLeft();
-  const score = blockScore(blockStates());
+  const score = currentScore();
   const key = `${left}/${score}`;
   if (key === lastStats) return;
   lastStats = key;
@@ -377,7 +400,7 @@ function refreshParty() {
 
 function announceTurn() {
   if (!party) return;
-  turnBaseline = blockScore(blockStates());
+  turnBaseline = currentScore();
   ui.toast(`${playerLabel(party.current)}'s turn`);
   refreshParty();
 }
@@ -388,7 +411,7 @@ function endPartyTurn() {
   turnActive = false;
   const who = party.current;
   if (party.mode === 'duel') {
-    const score = blockScore(blockStates());
+    const score = currentScore();
     const gained = score - turnBaseline;
     turnBaseline = score; // set now: the next player may act before the toast ends
     endDuelTurn(party, gained);
@@ -472,6 +495,9 @@ function loadLevel(index: number) {
   grab.entity = null;
   turnActive = false;
   spraying = false;
+  bonus = 0;
+  chainLength = 0;
+  lastBlastAt = Number.NEGATIVE_INFINITY;
   beamLeft = 0;
   beam.visible = false;
   phase = 'playing';
@@ -550,12 +576,14 @@ function loadLevel(index: number) {
       multiplier: 1,
       startPos: new THREE.Vector3(x, y + top, z),
       grabbedOnce: false,
+      squash: 0,
     };
     blocks.push(entity);
     colliderOwner.set(collider.handle, entity);
   }
 
   frameCamera();
+  startIntro();
   syncRender(1);
   refreshStats();
   ui.setLevel(level);
@@ -575,6 +603,55 @@ function frameCamera() {
   controls.target.set(0, top + maxY / 2, 0);
   camera.position.set(0, top + maxY * 0.7 + 2.5, dist);
   controls.update();
+}
+
+// ---------- camera moves: intro fly-in, result orbit, slow-mo push-in ----------
+const orbitOffset = new THREE.Vector3();
+const introTo = new THREE.Vector3();
+let introT = 1; // 0..1 progress of the fly-in; 1 = not running
+let introLevel = -1; // the fly-in plays once per level, not on retry or Jenga-off rebuilds
+let push = 0;
+const pushOffset = new THREE.Vector3();
+
+/** Turn the camera around the orbit target by `angle` rad and scale its distance by `zoom`. */
+function orbitCamera(angle: number, zoom = 1) {
+  orbitOffset.copy(camera.position).sub(controls.target);
+  orbitOffset.applyAxisAngle(THREE.Object3D.DEFAULT_UP, angle);
+  const len = Math.min(Math.max(orbitOffset.length() * zoom, controls.minDistance), controls.maxDistance);
+  camera.position.copy(controls.target).add(orbitOffset.setLength(len));
+}
+
+const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+function startIntro() {
+  if (levelIndex === introLevel) return;
+  introLevel = levelIndex;
+  if (reducedMotion) return;
+  introTo.copy(camera.position);
+  introT = 0;
+  controls.enabled = false;
+  updateIntro(0);
+}
+
+function skipIntro() {
+  if (introT >= 1) return;
+  introT = 1;
+  camera.position.copy(introTo);
+  controls.enabled = true;
+  controls.update();
+}
+
+/** Swoop in from high and to the side, easing out onto the framed pose. */
+function updateIntro(dt: number) {
+  if (introT >= 1) return;
+  introT = Math.min(introT + dt / INTRO_SECONDS, 1);
+  const away = (1 - introT) ** 3;
+  orbitOffset.copy(introTo).sub(controls.target);
+  orbitOffset.applyAxisAngle(THREE.Object3D.DEFAULT_UP, away * 1.4).multiplyScalar(1 + away * 0.8);
+  orbitOffset.y += away * 6;
+  camera.position.copy(controls.target).add(orbitOffset);
+  camera.lookAt(controls.target);
+  if (introT >= 1) skipIntro();
 }
 
 // ---------- balls ----------
@@ -650,20 +727,53 @@ function ignite(e: BlockEntity, delay = 0) {
 
 const blastCenter = new THREE.Vector3();
 const blastDir = new THREE.Vector3();
-let recentBlasts: number[] = [];
 let slowUntil = 0; // performance.now() time until which the sim runs in slow motion
+const puffVel = new THREE.Vector3();
+const puffPos = new THREE.Vector3();
+
+function randomDir(out: THREE.Vector3) {
+  return out.set(Math.random() - 0.5, Math.random() - 0.5, Math.random() - 0.5).normalize();
+}
+
+/** Flash, shockwave, smoke and chunky debris: the look of one blast. */
+function blastEffects(at: THREE.Vector3, color: number) {
+  const extras = QUALITY_SETTINGS[quality].extras;
+  glow.emit(at, { color: 0xfff1c1, size: [1.5, BLAST_RADIUS * 2.2], life: 0.18, alpha: 1 });
+  glow.emit(at, { color: 0xffa94d, size: [1, BLAST_RADIUS * 1.6], life: 0.35, alpha: 0.9 });
+  shockwaves.spawn(at, BLAST_RADIUS * 1.2);
+  const puffs = extras ? 10 : 4;
+  for (let i = 0; i < puffs; i++) {
+    puffPos.copy(at).addScaledVector(randomDir(puffVel), 0.6);
+    randomDir(puffVel).multiplyScalar(3).y += 1.5;
+    smoke.emit(puffPos, {
+      color: i % 2 === 0 ? 0x8d8d8d : 0x5c5c5c,
+      size: [1, 2.6 + Math.random()],
+      life: 1.1 + Math.random() * 0.6,
+      alpha: 0.7,
+      velocity: puffVel,
+    });
+  }
+  debris.burst(at, [color, 0x3a3a3a, 0xffa94d], extras ? 16 : 8, 8);
+  particles.burst(at, 0xffd166, 24, 9);
+}
+
+/** Count chained blasts; from the third on, award a bonus, call it out and slow time so it reads. */
+function countChain() {
+  chainLength = simTime - lastBlastAt <= CHAIN_WINDOW ? chainLength + 1 : 1;
+  lastBlastAt = simTime;
+  const gained = chainBonus(chainLength);
+  if (gained === 0) return;
+  bonus += gained;
+  ui.callout(`Chain ×${chainLength}!`, `+${gained}`);
+  slowUntil = performance.now() + 1000;
+}
 
 function detonate(source: Blaster) {
   blastCenter.copy(source.currPos);
-  particles.burst(blastCenter, 0xffa94d, 40, 9);
-  particles.burst(blastCenter, 0xe63946, 20, 6);
-  shake.kick(0.35);
+  blastEffects(blastCenter, 'type' in source ? BLOCKS[source.type].color : TOOLS[source.tool].color);
+  countChain();
+  shake.kick(0.35 + 0.05 * Math.min(chainLength, 6));
   playBoom();
-  // three blasts inside ~1 s is a chain reaction: slow down so it reads
-  const now = performance.now();
-  recentBlasts = recentBlasts.filter((t) => now - t < 1200);
-  recentBlasts.push(now);
-  if (recentBlasts.length >= 3) slowUntil = now + 1000;
   if ('type' in source) {
     removeBlock(source);
   } else {
@@ -743,9 +853,46 @@ function triggerBlock(
 
 function vanishAll(toVanish: Set<BlockEntity>) {
   for (const e of toVanish) {
-    particles.burst(e.currPos, BLOCKS[e.type].color, 14, 4);
+    for (let i = 0; i < 5; i++) {
+      puffPos.copy(e.currPos).addScaledVector(randomDir(puffVel), 0.3);
+      smoke.emit(puffPos, {
+        color: i % 2 === 0 ? BLOCKS[e.type].color : 0xffffff,
+        size: [0.6, 1.8],
+        life: 0.5,
+        alpha: 0.8,
+        velocity: randomDir(puffVel).multiplyScalar(2),
+      });
+    }
+    particles.burst(e.currPos, BLOCKS[e.type].color, 8, 4);
     playVanish();
     removeBlock(e);
+  }
+}
+
+let lastDust = 0;
+
+/** Dust where a block lands hard, and a quick squash on blocks a ball smacks into. */
+function impactEffects(a: Blaster | undefined, b: Blaster | undefined, speed: number) {
+  const ballHit = (a && 'tool' in a) || (b && 'tool' in b);
+  for (const e of [a, b]) {
+    if (!e || !('type' in e)) continue;
+    if (ballHit && speed >= SQUASH_SPEED) e.squash = 1;
+  }
+  const now = performance.now();
+  if (now - lastDust < 60) return; // a collapse fires dozens of contacts at once
+  lastDust = now;
+  const lander = [a, b].find((e): e is BlockEntity => !!e && 'type' in e);
+  if (!lander) return;
+  puffPos.copy(lander.currPos);
+  puffPos.y -= lander.size.y / 2;
+  for (let i = 0; i < 3; i++) {
+    smoke.emit(puffPos, {
+      color: 0xe3d5b8,
+      size: [0.4, 1.2 + Math.min(speed / 10, 1)],
+      life: 0.6,
+      alpha: 0.55,
+      velocity: puffVel.set(Math.random() - 0.5, 0.3, Math.random() - 0.5).multiplyScalar(2.5),
+    });
   }
 }
 
@@ -758,6 +905,7 @@ function handleImpacts() {
     // post-solve speed of the faster body; resting contacts stay far below the thresholds
     const speed = Math.max(bodySpeed(h1), bodySpeed(h2));
     if (speed >= 1.5) playImpact(impactKind(a, b), speed);
+    if (speed >= DUST_SPEED) impactEffects(a, b, speed);
     const blocksHit = [a, b].filter(
       (e): e is BlockEntity => !!e && 'type' in e && !!BLOCKS[e.type].behaviour,
     );
@@ -883,13 +1031,20 @@ function capture(e: Entity) {
 const tmpPos = new THREE.Vector3();
 const tmpRot = new THREE.Quaternion();
 const tmpMat = new THREE.Matrix4();
+const tmpScale = new THREE.Vector3();
 
 function syncRender(alpha: number) {
   for (const e of blocks) {
     if (e.status === 'removed') continue;
     tmpPos.lerpVectors(e.prevPos, e.currPos, alpha);
     tmpRot.slerpQuaternions(e.prevRot, e.currRot, alpha);
-    tmpMat.compose(tmpPos, tmpRot, e.size);
+    if (e.squash > 0) {
+      const k = Math.sin(e.squash * Math.PI) * e.squash; // in-out squash, strongest just after the hit
+      tmpScale.set(e.size.x * (1 + 0.14 * k), e.size.y * (1 - 0.18 * k), e.size.z * (1 + 0.14 * k));
+      tmpMat.compose(tmpPos, tmpRot, tmpScale);
+    } else {
+      tmpMat.compose(tmpPos, tmpRot, e.size);
+    }
     e.mesh.setMatrixAt(e.instance, tmpMat);
   }
   for (const m of blockMeshes) m.instanceMatrix.needsUpdate = true;
@@ -921,6 +1076,7 @@ function popupFor(e: BlockEntity) {
     ((popupPos.x + 1) / 2) * innerWidth,
     ((1 - popupPos.y) / 2) * innerHeight,
     points < 0,
+    `#${BLOCKS[e.type].color.toString(16).padStart(6, '0')}`,
   );
 }
 
@@ -1013,7 +1169,7 @@ function finishIfDone() {
   if (result === 'playing') return;
   phase = result;
   if (result === 'won') {
-    const score = finalScore(states, throwsLeft());
+    const score = finalScore(states, throwsLeft(), bonus);
     const medal = medalFor(score, level.medals);
     const saved = recordResult(level.id, score, medal);
     playResult(true);
@@ -1179,6 +1335,10 @@ qualityBtn.addEventListener('click', () => {
 
 canvas.addEventListener('pointerdown', (ev) => {
   unlockAudio(); // browsers start audio only after a user gesture
+  if (introT < 1) {
+    skipIntro(); // the first tap during the fly-in only skips it
+    return;
+  }
   if (ev.pointerType === 'touch') {
     activeTouches.add(ev.pointerId);
     if (activeTouches.size > 1) {
@@ -1272,6 +1432,11 @@ function spaceUp() {
 
 addEventListener('keydown', (ev) => {
   unlockAudio();
+  if (introT < 1 && phase === 'playing') {
+    skipIntro();
+    if (ev.code === 'Space') ev.preventDefault();
+    return;
+  }
   if (ev.code === 'Space') {
     ev.preventDefault();
     if (!ev.repeat) spaceDown();
@@ -1294,11 +1459,9 @@ addEventListener('blur', () => {
   spraying = false;
 });
 
-const orbitOffset = new THREE.Vector3();
-
 /** Move the aim crosshair and orbit/zoom the camera from held keys. */
 function applyKeys(dt: number) {
-  if (keysDown.size === 0 || phase === 'menu') return;
+  if (keysDown.size === 0 || phase === 'menu' || introT < 1) return;
   const dx = (keysDown.has('ArrowRight') ? 1 : 0) - (keysDown.has('ArrowLeft') ? 1 : 0);
   const dy = (keysDown.has('ArrowDown') ? 1 : 0) - (keysDown.has('ArrowUp') ? 1 : 0);
   if (dx || dy) {
@@ -1309,13 +1472,7 @@ function applyKeys(dt: number) {
   const turn = (keysDown.has('KeyE') ? 1 : 0) - (keysDown.has('KeyQ') ? 1 : 0);
   const zoom = (keysDown.has('KeyX') ? 1 : 0) - (keysDown.has('KeyZ') ? 1 : 0);
   if (turn || zoom) {
-    orbitOffset.copy(camera.position).sub(controls.target);
-    orbitOffset.applyAxisAngle(THREE.Object3D.DEFAULT_UP, turn * KEY_ORBIT_SPEED * dt);
-    const len = Math.min(
-      Math.max(orbitOffset.length() * (1 + zoom * dt), controls.minDistance),
-      controls.maxDistance,
-    );
-    camera.position.copy(controls.target).add(orbitOffset.setLength(len));
+    orbitCamera(turn * KEY_ORBIT_SPEED * dt, 1 + zoom * dt);
     controls.update();
   }
 }
@@ -1491,7 +1648,25 @@ function sparkleGems(dt: number) {
     .multiply(gem.size)
     .multiplyScalar(1.1)
     .add(gem.currPos);
-  particles.burst(sparklePos, 0xffffff, 1, 0.4, 0);
+  glow.emit(sparklePos, { color: 0xffffff, size: [0.35, 0.05], life: 0.6, alpha: 0.9 });
+}
+
+const trailPos = new THREE.Vector3();
+
+/** White streak behind fast balls and glints off gems that are flying. */
+function updateTrails() {
+  if (!QUALITY_SETTINGS[quality].extras) return;
+  for (const b of balls) {
+    if (speedOf(b.body) < TRAIL_SPEED) continue;
+    const r = TOOLS[b.tool].radius * params.radiusScale;
+    glow.emit(b.mesh.position, { color: 0xffffff, size: [r * 1.6, r * 0.3], life: 0.25, alpha: 0.35 });
+  }
+  for (const g of blocks) {
+    if (g.type !== 'gem' || g.status === 'removed' || g.body.isSleeping()) continue;
+    if (speedOf(g.body) < 3 || Math.random() < 0.5) continue;
+    trailPos.copy(g.currPos).addScaledVector(randomDir(puffVel), 0.5);
+    glow.emit(trailPos, { color: 0xffffff, size: [0.3, 0.05], life: 0.4, alpha: 0.9 });
+  }
 }
 
 // ---------- debug panel ----------
@@ -1544,9 +1719,16 @@ function frame(now: number) {
     steps++;
   }
   if (steps === MAX_STEPS_PER_FRAME) acc = 0; // spiral-of-death guard
+  // effects slow down with the sim, so slow-mo reads as bullet time
+  const fxDt = now < slowUntil ? dt * SLOWMO_SCALE : dt;
+  for (const e of blocks) if (e.squash > 0) e.squash = Math.max(0, e.squash - fxDt / SQUASH_SECONDS);
   syncRender(acc / STEP);
   applyKeys(dt);
-  controls.update();
+  if (introT < 1) updateIntro(dt);
+  else {
+    if (phase === 'won') orbitCamera(WIN_ORBIT_SPEED * dt);
+    controls.update();
+  }
   if (!physicsIdle) renderer.shadowMap.needsUpdate = true; // shadows only change while bodies move
   if (beamLeft > 0) {
     beamLeft -= dt;
@@ -1555,11 +1737,19 @@ function frame(now: number) {
   }
   updateAimPreview(now);
   sparkleGems(dt);
-  particles.update(dt, params.gravity);
+  updateTrails();
+  particles.update(fxDt, params.gravity);
+  debris.update(fxDt, params.gravity);
+  const pixelsPerUnit = renderer.domElement.height / (2 * Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)));
+  smoke.update(fxDt, pixelsPerUnit);
+  glow.update(fxDt, pixelsPerUnit);
+  shockwaves.update(fxDt, camera);
   shake.update(dt);
-  camera.position.add(shake.offset); // shake only the rendered frame, not the orbit state
+  push += ((now < slowUntil ? SLOWMO_PUSH : 0) - push) * Math.min(dt * 4, 1);
+  pushOffset.copy(controls.target).sub(camera.position).multiplyScalar(push).add(shake.offset);
+  camera.position.add(pushOffset); // shake and push-in move only the rendered frame, not the orbit state
   renderer.render(scene, camera);
-  camera.position.sub(shake.offset);
+  camera.position.sub(pushOffset);
   requestAnimationFrame(frame);
 }
 requestAnimationFrame(frame);
@@ -1571,6 +1761,7 @@ requestAnimationFrame(frame);
   balls,
   loadLevel: (i: number) => {
     startSolo(i);
+    skipIntro();
     ui.hideMenu();
   },
   phase: () => phase,

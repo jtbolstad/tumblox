@@ -11,6 +11,7 @@ const SHOTS = [
   ['01-gem-tower', 0, 0],
   ['06-first-boom', 5, 0],
   ['06-first-boom-blast', 5, 40],
+  ['07-chain-blast', 6, 70],
   ['15-fortress', 14, 0],
   ['17-jenga', 16, 0],
   ['21-cloud-nine', 20, 0],

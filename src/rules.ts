@@ -57,9 +57,18 @@ export function goalMet(goal: Goal, blocks: readonly BlockState[]): boolean {
   }
 }
 
-/** Final score on a win: block points plus a bonus per unused throw. */
-export function finalScore(blocks: readonly BlockState[], throwsLeft: number): number {
-  return blockScore(blocks) + throwsLeft * UNUSED_THROW_BONUS;
+/** Final score on a win: block points, chain bonus, and a bonus per unused throw. */
+export function finalScore(blocks: readonly BlockState[], throwsLeft: number, bonus = 0): number {
+  return blockScore(blocks) + bonus + throwsLeft * UNUSED_THROW_BONUS;
+}
+
+/** Seconds of sim time between blasts that still count as one chain reaction. */
+export const CHAIN_WINDOW = 1;
+export const CHAIN_STEP_BONUS = 25;
+
+/** Bonus for the blast that brings a chain to `length` blasts: none for 1-2, then 25, 50, 75... */
+export function chainBonus(length: number): number {
+  return length >= 3 ? (length - 2) * CHAIN_STEP_BONUS : 0;
 }
 
 export function medalFor(
