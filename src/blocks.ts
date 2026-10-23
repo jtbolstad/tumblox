@@ -12,14 +12,20 @@ export const BLOCK_IDS = [
   'chemical',
   'vanish',
   'multivanish',
+  'cloud',
+  'fragile',
+  'fireworks',
+  'jingle',
 ] as const;
 export type BlockType = (typeof BLOCK_IDS)[number];
 
 /**
  * explode: blasts on a hard hit. chemical: blasts only when two chemical blocks touch.
- * vanish: disappears after `hits` hard hits.
+ * vanish: disappears after `hits` hard hits (fragile is a vanish that needs a hard hit).
+ * fireworks: a hit or nearby blast launches it upward, then it bursts.
+ * jingle: plays a note when hit. float: once hit, gravity flips (see gravityScale) and it drifts away.
  */
-export type Behaviour = 'explode' | 'chemical' | 'vanish';
+export type Behaviour = 'explode' | 'chemical' | 'vanish' | 'fireworks' | 'jingle' | 'float';
 
 export interface BlockDef {
   color: number;
@@ -35,6 +41,8 @@ export interface BlockDef {
   triggerSpeed?: number;
   /** vanish: number of hard hits it survives plus one (default 1) */
   hits?: number;
+  /** gravity multiplier applied when a float block is first hit; negative drifts up (cloud) */
+  gravityScale?: number;
 }
 
 const base = { density: 1, friction: 0.7, restitution: 0.05, mobile: true, points: 0 };
@@ -52,4 +60,16 @@ export const BLOCKS: Record<BlockType, BlockDef> = {
   chemical: { ...base, color: 0x57cc99, behaviour: 'chemical', triggerSpeed: 1 },
   vanish: { ...base, color: 0x9b5de5, density: 0.8, behaviour: 'vanish', triggerSpeed: 1.5 },
   multivanish: { ...base, color: 0x6a4c93, density: 0.8, behaviour: 'vanish', triggerSpeed: 1.5, hits: 3 },
+  cloud: {
+    ...base,
+    color: 0xf1faee,
+    density: 0.3,
+    friction: 0.5,
+    behaviour: 'float',
+    triggerSpeed: 1,
+    gravityScale: -0.25,
+  },
+  fragile: { ...base, color: 0xffb3c6, density: 0.7, behaviour: 'vanish', triggerSpeed: 8 },
+  fireworks: { ...base, color: 0xff7b00, density: 0.8, behaviour: 'fireworks', triggerSpeed: 2 },
+  jingle: { ...base, color: 0x48cae4, behaviour: 'jingle', triggerSpeed: 0.8 },
 };

@@ -1,0 +1,57 @@
+{
+  "theme": "meadow",
+  "tool": "ball",
+  "throws": 3,
+  "id": "fireworks",
+  "name": "Fireworks",
+  "goal": {
+    "type": "toppleGems"
+  },
+  "medals": {
+    "bronze": 300,
+    "silver": 350,
+    "gold": 400
+  },
+  "platform": {
+    "size": [4, 4],
+    "top": 1
+  },
+  "blocks": [
+    {
+      "type": "normal",
+      "pos": [-1.2, 0.5, 0]
+    },
+    {
+      "type": "fireworks",
+      "pos": [-1.2, 1.5, 0]
+    },
+    {
+      "type": "gem",
+      "pos": [-1.2, 2.5, 0]
+    },
+    {
+      "type": "normal",
+      "pos": [0, 0.5, 0]
+    },
+    {
+      "type": "fireworks",
+      "pos": [0, 1.5, 0]
+    },
+    {
+      "type": "gem",
+      "pos": [0, 2.5, 0]
+    },
+    {
+      "type": "normal",
+      "pos": [1.2, 0.5, 0]
+    },
+    {
+      "type": "fireworks",
+      "pos": [1.2, 1.5, 0]
+    },
+    {
+      "type": "gem",
+      "pos": [1.2, 2.5, 0]
+    }
+  ]
+}

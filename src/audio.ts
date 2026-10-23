@@ -122,6 +122,14 @@ export function playBoom() {
   noiseBurst(c, 0.45, 0.5, 1800);
 }
 
+/** A soft bell note, used by jingle blocks. */
+export function playNote(freq: number) {
+  const c = out();
+  if (!c) return;
+  tone(c, freq, freq, 0.45, 0.28, 'sine');
+  tone(c, freq * 2, freq * 2, 0.25, 0.1, 'sine');
+}
+
 export function playVanish() {
   const c = out();
   if (!c) return;

@@ -1,0 +1,93 @@
+{
+  "theme": "meadow",
+  "tool": "ball",
+  "throws": 3,
+  "id": "jingle-bells",
+  "name": "Jingle Bells",
+  "goal": {
+    "type": "toppleGems"
+  },
+  "medals": {
+    "bronze": 300,
+    "silver": 350,
+    "gold": 400
+  },
+  "platform": {
+    "size": [6, 6],
+    "top": 1
+  },
+  "blocks": [
+    {
+      "type": "jingle",
+      "pos": [-2, 0.5, 0]
+    },
+    {
+      "type": "jingle",
+      "pos": [-1, 0.5, 0]
+    },
+    {
+      "type": "jingle",
+      "pos": [0, 0.5, 0]
+    },
+    {
+      "type": "jingle",
+      "pos": [1, 0.5, 0]
+    },
+    {
+      "type": "jingle",
+      "pos": [2, 0.5, 0]
+    },
+    {
+      "type": "jingle",
+      "pos": [-2, 1.5, 0]
+    },
+    {
+      "type": "jingle",
+      "pos": [-1, 1.5, 0]
+    },
+    {
+      "type": "jingle",
+      "pos": [0, 1.5, 0]
+    },
+    {
+      "type": "jingle",
+      "pos": [1, 1.5, 0]
+    },
+    {
+      "type": "jingle",
+      "pos": [2, 1.5, 0]
+    },
+    {
+      "type": "jingle",
+      "pos": [-2, 2.5, 0]
+    },
+    {
+      "type": "jingle",
+      "pos": [-1, 2.5, 0]
+    },
+    {
+      "type": "jingle",
+      "pos": [0, 2.5, 0]
+    },
+    {
+      "type": "jingle",
+      "pos": [1, 2.5, 0]
+    },
+    {
+      "type": "jingle",
+      "pos": [2, 2.5, 0]
+    },
+    {
+      "type": "gem",
+      "pos": [-2, 3.5, 0]
+    },
+    {
+      "type": "gem",
+      "pos": [0, 3.5, 0]
+    },
+    {
+      "type": "gem",
+      "pos": [2, 3.5, 0]
+    }
+  ]
+}

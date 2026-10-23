@@ -220,7 +220,8 @@ flowchart TD
 - [x] Tools: heavy ball, bomb ball, bouncy ball
 - [ ] Explore tutorial sets (6) and 2 themed Adventure worlds (~24 levels)
 - [x] Impact sounds by material and speed (synthesised), particles, camera shake
-- [ ] Music, slow-mo on chain reactions
+- [x] Slow-mo on chain reactions
+- [ ] Music
 - [ ] Playtest round; tune difficulty and medal thresholds
 
 **Phase 3 — Editor and sharing**
@@ -231,7 +232,8 @@ flowchart TD
 
 **Phase 4 — Party and release**
 - [ ] Hot-seat 2–4 players: turn order, per-player score, Jenga-off
-- [ ] Remaining blocks: cloud, fragile, fireworks, jingle; laser and hose tools
+- [x] Remaining blocks: cloud, fragile, fireworks, jingle
+- [ ] Laser and hose tools
 - [ ] Last 2 Adventure worlds
 - [ ] Performance: instancing, body caps, sleep-based physics pause, quality setting
 - [ ] PWA (offline, installable), keyboard / one-button throw, colour-blind-safe block markings

@@ -7,6 +7,7 @@ import {
   isMuted,
   playBoom,
   playImpact,
+  playNote,
   playResult,
   playScore,
   playVanish,
@@ -41,6 +42,11 @@ const BLAST_DELTA_V = 9; // m/s at the centre of an explosion
 const CHAIN_DELAY = 0.15; // s between a blast and the bombs it sets off
 const HIT_COOLDOWN = 0.2; // s before the same multi-hit block can lose another hit
 const BOMB_BALL_TRIGGER_SPEED = 3; // m/s
+const SLOWMO_SCALE = 0.4;
+const FIREWORK_LAUNCH_SPEED = 14; // m/s upward
+const FIREWORK_FUSE = 0.7; // s from launch to burst
+const SKY_HEIGHT = 25; // m above the platform at which a floating cloud block counts as gone
+const JINGLE_NOTES = [262, 294, 330, 392, 440, 523]; // C major pentatonic-ish, Hz
 const PULL_DISTANCE = 2.6; // m a grabbed block must travel from its start to count as pulled out
 const COLLAPSE_DISTANCE = 1.5; // m an untouched Jenga block may drift before the tower counts as fallen
 
@@ -84,6 +90,7 @@ interface BlockEntity extends Entity {
   exploding: boolean;
   hitsLeft: number; // vanish blocks: hard hits remaining
   lastHit: number; // sim time of the last counted hit, so one impact is not counted per contact
+  note: number; // jingle blocks: index into JINGLE_NOTES, so a row plays a tune
   multiplier: number; // zone multiplier at its current floor position
   startPos: THREE.Vector3; // where the level placed it, to measure Jenga pulls and collapse
   grabbedOnce: boolean;
@@ -190,6 +197,7 @@ let throwsUsed = 0;
 let simTime = 0;
 let lastMotion = 0;
 const pendingBlasts: { entity: Blaster; at: number }[] = [];
+const pendingLaunches: { entity: BlockEntity; at: number }[] = []; // fireworks waiting to lift off
 let collapsed = false; // a Jenga tower block (never grabbed) was knocked out of place
 
 const ui = createUi({
@@ -235,6 +243,7 @@ function clearLevel() {
   balls.length = 0;
   colliderOwner.clear();
   pendingBlasts.length = 0;
+  pendingLaunches.length = 0;
   if (platformCollider) world.removeCollider(platformCollider, false);
   if (platformMesh) {
     scene.remove(platformMesh);
@@ -309,7 +318,9 @@ function loadLevel(index: number) {
     const def = BLOCKS[spec.type];
     const [x, y, z] = spec.pos;
     const desc = def.mobile
-      ? RAPIER.RigidBodyDesc.dynamic().setLinearDamping(0.05).setAngularDamping(0.1)
+      ? RAPIER.RigidBodyDesc.dynamic()
+          .setLinearDamping(def.behaviour === 'float' ? 0.8 : 0.05) // floaters drift, not rocket
+          .setAngularDamping(0.1)
       : RAPIER.RigidBodyDesc.fixed();
     desc
       .setTranslation(x, y + top, z)
@@ -337,6 +348,7 @@ function loadLevel(index: number) {
       exploding: false,
       hitsLeft: def.hits ?? 1,
       lastHit: -1,
+      note: ((Math.round(x * 2) % JINGLE_NOTES.length) + JINGLE_NOTES.length) % JINGLE_NOTES.length,
       multiplier: 1,
       startPos: new THREE.Vector3(x, y + top, z),
       grabbedOnce: false,
@@ -429,8 +441,17 @@ function scheduleBlast(e: Blaster, delay: number) {
   pendingBlasts.push({ entity: e, at: simTime + delay });
 }
 
+/** Launch a fireworks block upward; it bursts after the fuse. */
+function ignite(e: BlockEntity, delay = 0) {
+  if (e.exploding || e.status === 'removed') return;
+  pendingLaunches.push({ entity: e, at: simTime + delay });
+  scheduleBlast(e, delay + FIREWORK_FUSE);
+}
+
 const blastCenter = new THREE.Vector3();
 const blastDir = new THREE.Vector3();
+let recentBlasts: number[] = [];
+let slowUntil = 0; // performance.now() time until which the sim runs in slow motion
 
 function detonate(source: Blaster) {
   blastCenter.copy(source.currPos);
@@ -438,6 +459,11 @@ function detonate(source: Blaster) {
   particles.burst(blastCenter, 0xe63946, 20, 6);
   shake.kick(0.35);
   playBoom();
+  // three blasts inside ~1 s is a chain reaction: slow down so it reads
+  const now = performance.now();
+  recentBlasts = recentBlasts.filter((t) => now - t < 1200);
+  recentBlasts.push(now);
+  if (recentBlasts.length >= 3) slowUntil = now + 1000;
   if ('type' in source) {
     removeBlock(source);
   } else {
@@ -452,7 +478,11 @@ function detonate(source: Blaster) {
     blastDir.copy(t.currPos).sub(blastCenter);
     const d = blastDir.length();
     if (d > BLAST_RADIUS) continue;
-    if ('type' in t && BLOCKS[t.type].behaviour === 'explode') scheduleBlast(t, CHAIN_DELAY);
+    if ('type' in t) {
+      const behaviour = BLOCKS[t.type].behaviour;
+      if (behaviour === 'explode') scheduleBlast(t, CHAIN_DELAY);
+      else if (behaviour === 'fireworks') ignite(t, CHAIN_DELAY);
+    }
     const falloff = 1 - d / BLAST_RADIUS;
     blastDir.y += 0.35; // blasts lift as well as push
     blastDir.normalize().multiplyScalar(BLAST_DELTA_V * falloff * t.body.mass());
@@ -505,6 +535,13 @@ function handleImpacts() {
         if (a && b && 'type' in a && 'type' in b && a.type === 'chemical' && b.type === 'chemical') {
           scheduleBlast(e, 0);
         }
+      } else if (def.behaviour === 'fireworks') {
+        ignite(e);
+      } else if (def.behaviour === 'float') {
+        e.body.setGravityScale(def.gravityScale ?? -0.25, true); // stays put until something disturbs it
+      } else if (def.behaviour === 'jingle' && simTime - e.lastHit > HIT_COOLDOWN) {
+        e.lastHit = simTime;
+        playNote(JINGLE_NOTES[e.note]);
       } else if (def.behaviour === 'vanish' && simTime - e.lastHit > HIT_COOLDOWN) {
         e.lastHit = simTime;
         e.hitsLeft--;
@@ -579,6 +616,14 @@ function stepPhysics() {
   simTime += STEP;
   handleImpacts();
 
+  for (let i = pendingLaunches.length - 1; i >= 0; i--) {
+    if (pendingLaunches[i].at > simTime) continue;
+    const [due] = pendingLaunches.splice(i, 1);
+    if (due.entity.status !== 'removed') {
+      const v = due.entity.body.linvel();
+      due.entity.body.setLinvel({ x: v.x, y: FIREWORK_LAUNCH_SPEED, z: v.z }, true);
+    }
+  }
   for (let i = pendingBlasts.length - 1; i >= 0; i--) {
     if (pendingBlasts[i].at <= simTime) {
       const [due] = pendingBlasts.splice(i, 1);
@@ -600,6 +645,10 @@ function stepPhysics() {
       } else if (moved > COLLAPSE_DISTANCE) {
         collapsed = true;
       }
+    }
+    if (e.currPos.y > level.platform.top + SKY_HEIGHT) {
+      removeBlock(e); // a cloud drifted out of the level
+      continue;
     }
     if (e.status === 'alive' && e.currPos.y < fallY) {
       e.status = 'fallen';
@@ -984,7 +1033,7 @@ let last = performance.now();
 let acc = 0;
 function frame(now: number) {
   const dt = Math.min((now - last) / 1000, 0.25);
-  acc += dt;
+  acc += now < slowUntil ? dt * SLOWMO_SCALE : dt;
   last = now;
   let steps = 0;
   while (acc >= STEP && steps < MAX_STEPS_PER_FRAME) {
