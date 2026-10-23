@@ -50,7 +50,8 @@ export const levelSchema = z.object({
         rot: z.number().default(0),
       }),
     )
-    .min(1),
+    .min(1)
+    .max(300), // cap so a shared or hand-made level cannot freeze a phone
 });
 
 export type Level = z.infer<typeof levelSchema>;

@@ -37,3 +37,12 @@ export function powerTier(speed: number, thresholds: readonly [number, number, n
   if (speed >= thresholds[0]) return 1;
   return 0;
 }
+
+/**
+ * One-button throw: while the key is held the power ping-pongs 0,1,2,3,2,1,0... and the tier at
+ * release is used. `seconds` is how long the key has been held.
+ */
+export function chargeTier(seconds: number, secondsPerStep = 0.4): 0 | 1 | 2 | 3 {
+  const sequence = [0, 1, 2, 3, 2, 1] as const;
+  return sequence[Math.floor(Math.max(seconds, 0) / secondsPerStep + 1e-9) % sequence.length];
+}

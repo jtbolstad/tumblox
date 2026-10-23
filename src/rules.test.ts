@@ -106,7 +106,7 @@ describe('level schema', () => {
 describe('bundled levels', () => {
   it('all parse, have unique ids and a reachable goal', () => {
     const levels = loadBundledLevels();
-    expect(levels.length).toBe(24);
+    expect(levels.length).toBeGreaterThanOrEqual(28);
     expect(new Set(levels.map((l) => l.id)).size).toBe(levels.length);
     for (const l of levels) {
       if (l.goal.type === 'toppleGems') expect(l.blocks.some((b) => b.type === 'gem')).toBe(true);

@@ -201,7 +201,7 @@ flowchart TD
 - [x] Spawn a tower of 20 blocks asleep; tune solver iterations until it stands still
 - [x] Flick gesture → velocity → 4 power tiers → ball launched toward the target ray
 - [x] Debug panel (lil-gui): gravity, ball mass, power curve, friction, restitution
-- [ ] Deploy to static hosting; test on a phone
+- [ ] Deploy to static hosting; test on a phone (throw tuned for mouse; phone test over LAN pending)
 
 **Phase 1 — Vertical slice**
 - [x] Level JSON schema + loader with validation (zod)
@@ -211,32 +211,32 @@ flowchart TD
 - [x] Throws counter, medal screen, retry / next
 - [x] Floating score pop-ups on fallen blocks
 - [x] Level select with saved medals (localStorage)
-- [x] 10 levels; Vitest tests for scoring and goal rules
+- [x] 10 levels; Vitest tests for scoring and goal rules (24 levels now in `src/levels/`)
 
 **Phase 2 — Depth and juice**
 - [x] Grab tool: raycast pick + spring to kinematic cursor anchor; Jenga goal type
 - [x] Blocks: wood, steel, chemical, penalty, ice, multi-hit vanish
 - [x] Multiplier zones
 - [x] Tools: heavy ball, bomb ball, bouncy ball
-- [ ] Explore tutorial sets (6) and 2 themed Adventure worlds (~24 levels)
+- [ ] Explore tutorial sets (6) and 2 themed Adventure worlds (~24 levels) — 24 standalone levels exist, not yet grouped into sets/worlds
 - [x] Impact sounds by material and speed (synthesised), particles, camera shake
 - [x] Slow-mo on chain reactions
-- [ ] Music
+- [x] Music: original synthesised loop (`src/music.ts`), own on/off button
 - [ ] Playtest round; tune difficulty and medal thresholds
 
-**Phase 3 — Editor and sharing**
+**Phase 3 — Editor and sharing - LATER**
 - [ ] Editor mode: grid snap, place / move / scale / rotate / delete, block palette, paint type
 - [ ] Level settings panel: goal, tool, throws, medal thresholds; test-play toggle
 - [ ] Export/import JSON; share link with lz-string in the URL hash
 - [ ] Local "My levels" library
 
 **Phase 4 — Party and release**
-- [ ] Hot-seat 2–4 players: turn order, per-player score, Jenga-off
+- [x] Hot-seat 2–4 players: turn order, per-player score, Jenga-off (`src/party.ts`; pick player count in the level menu)
 - [x] Remaining blocks: cloud, fragile, fireworks, jingle
-- [ ] Laser and hose tools
+- [x] Laser and hose tools (levels 25–28; hose `throws` = seconds of water)
 - [ ] Last 2 Adventure worlds
-- [ ] Performance: instancing, body caps, sleep-based physics pause, quality setting
-- [ ] PWA (offline, installable), keyboard / one-button throw, colour-blind-safe block markings
+- [x] Performance: instancing, body caps (300 blocks per level), sleep-based physics pause, shadow re-render only while moving, low/medium/high quality
+- [x] PWA (offline, installable), keyboard / one-button throw, colour-blind-safe block markings
 - [ ] Final name, logo, original art and music; launch page
 
 ## Risks, IP and open questions

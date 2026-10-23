@@ -7,6 +7,7 @@ import {
   isMuted,
   playBoom,
   playImpact,
+  playLaser,
   playNote,
   playResult,
   playScore,
@@ -17,6 +18,18 @@ import {
 import { BLOCKS, type BlockType } from './blocks';
 import { disposeMesh, makeZoneMesh, Particles, Shake } from './fx';
 import { type Level, loadBundledLevels } from './level';
+import { markTexture } from './marks';
+import { initMusic, isMusicOn, setMusicOn } from './music';
+import {
+  createParty,
+  endDuelTurn,
+  endJengaTurn,
+  type Party,
+  partyModeFor,
+  playerLabel,
+  topple,
+  totalTurns,
+} from './party';
 import { loadProgress, recordResult } from './progress';
 import {
   type BlockState,
@@ -28,7 +41,7 @@ import {
   outcome,
   zoneMultiplier,
 } from './rules';
-import { type PointerSample, powerTier, releaseVelocity } from './throw';
+import { chargeTier, type PointerSample, powerTier, releaseVelocity } from './throw';
 import { TOOL_IDS, TOOLS, type ToolId } from './tools';
 import { createUi } from './ui';
 
@@ -49,6 +62,22 @@ const SKY_HEIGHT = 25; // m above the platform at which a floating cloud block c
 const JINGLE_NOTES = [262, 294, 330, 392, 440, 523]; // C major pentatonic-ish, Hz
 const PULL_DISTANCE = 2.6; // m a grabbed block must travel from its start to count as pulled out
 const COLLAPSE_DISTANCE = 1.5; // m an untouched Jenga block may drift before the tower counts as fallen
+const LASER_SPEED = 4; // m/s of impact a laser hit counts as for block behaviours (bombs, vanish, jingle)
+const LASER_IMPULSE = 5; // N·s nudge applied to the block the beam hits
+const BEAM_SECONDS = 0.18;
+const HOSE_FORCE = 26; // N at the centre of the stream
+const HOSE_RANGE = 22; // m
+const HOSE_SPLASH = 1.1; // m around the hit point that is pushed too
+const KEY_AIM_SPEED = 520; // px/s the keyboard crosshair moves
+const KEY_ORBIT_SPEED = 1.2; // rad/s for Q/E
+const INFINITE_TURNS = 999; // Jenga-off has no throw limit
+const QUALITIES = ['low', 'medium', 'high'] as const;
+type Quality = (typeof QUALITIES)[number];
+const QUALITY_SETTINGS: Record<Quality, { pixelRatio: number; shadowMap: number }> = {
+  low: { pixelRatio: 1, shadowMap: 512 },
+  medium: { pixelRatio: 1.5, shadowMap: 1024 },
+  high: { pixelRatio: 2, shadowMap: 2048 },
+};
 
 const params = {
   gravity: 9.81,
@@ -69,7 +98,7 @@ const params = {
   grabStiffness: 60,
   grabDamping: 12,
   grabMaxAccel: 50,
-  restart: () => loadLevel(levelIndex),
+  restart: () => restart(),
 };
 
 interface Entity {
@@ -112,8 +141,8 @@ await RAPIER.init();
 // ---------- renderer / scene ----------
 const canvas = document.getElementById('c') as HTMLCanvasElement;
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
-renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
 renderer.shadowMap.enabled = true;
+renderer.shadowMap.autoUpdate = false; // re-rendered only while something moves, see frame()
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
 const scene = new THREE.Scene();
@@ -127,7 +156,6 @@ scene.add(new THREE.HemisphereLight(0xffffff, 0x88aa77, 1.1));
 const sun = new THREE.DirectionalLight(0xffffff, 2.2);
 sun.position.set(8, 16, 6);
 sun.castShadow = true; // the one shadow light
-sun.shadow.mapSize.set(2048, 2048);
 Object.assign(sun.shadow.camera, { left: -12, right: 12, top: 12, bottom: -12, near: 1, far: 50 });
 scene.add(sun);
 
@@ -149,15 +177,39 @@ controls.mouseButtons = { LEFT: -1 as THREE.MOUSE, MIDDLE: THREE.MOUSE.DOLLY, RI
 controls.touches = { ONE: -1 as THREE.TOUCH, TWO: THREE.TOUCH.DOLLY_ROTATE };
 controls.update();
 
+let quality: Quality = readQuality();
+
+function readQuality(): Quality {
+  try {
+    const saved = localStorage.getItem('blox.quality.v1');
+    if (saved && (QUALITIES as readonly string[]).includes(saved)) return saved as Quality;
+  } catch {
+    // storage blocked: fall through to the default
+  }
+  return matchMedia('(pointer: coarse)').matches ? 'medium' : 'high'; // phones start lighter
+}
+
+function applyQuality() {
+  const q = QUALITY_SETTINGS[quality];
+  renderer.setPixelRatio(Math.min(devicePixelRatio, q.pixelRatio));
+  sun.shadow.mapSize.set(q.shadowMap, q.shadowMap);
+  sun.shadow.map?.dispose();
+  sun.shadow.map = null; // reallocated at the new size on the next shadow render
+  renderer.setSize(innerWidth, innerHeight, false);
+  renderer.shadowMap.needsUpdate = true;
+}
+
 function resize() {
   const w = innerWidth;
   const h = innerHeight;
   renderer.setSize(w, h, false);
+  renderer.shadowMap.needsUpdate = true;
   camera.aspect = w / h;
   camera.updateProjectionMatrix();
 }
 addEventListener('resize', resize);
 resize();
+applyQuality();
 
 // ---------- physics ----------
 const world = new RAPIER.World({ x: 0, y: -params.gravity, z: 0 });
@@ -199,14 +251,21 @@ let lastMotion = 0;
 const pendingBlasts: { entity: Blaster; at: number }[] = [];
 const pendingLaunches: { entity: BlockEntity; at: number }[] = []; // fireworks waiting to lift off
 let collapsed = false; // a Jenga tower block (never grabbed) was knocked out of place
+let party: Party | null = null; // hot-seat game in progress, null for solo play
+let turnActive = false; // party: the current player has acted and the scene is still resolving
+let turnBaseline = 0; // party duel: block score when the turn started
+let spraying = false; // hose held down
+let beamLeft = 0; // s the laser beam stays visible
+let physicsIdle = true; // everything asleep: world.step is skipped
 
 const ui = createUi({
-  onSelect: (i) => {
-    loadLevel(i);
+  onSelect: (i, players) => {
+    if (players > 1) startParty(i, players);
+    else startSolo(i);
     ui.hideMenu();
   },
-  onRetry: () => loadLevel(levelIndex),
-  onNext: () => loadLevel(Math.min(levelIndex + 1, levels.length - 1)),
+  onRetry: () => restart(),
+  onNext: () => startSolo(Math.min(levelIndex + 1, levels.length - 1)),
   onOpenMenu: () => {
     phase = 'menu';
     ui.showMenu(levels, loadProgress());
@@ -217,8 +276,14 @@ function blockStates(): BlockState[] {
   return blocks.map((b) => ({ type: b.type, status: b.status, multiplier: b.multiplier }));
 }
 
+function totalThrows() {
+  if (!party) return level.throws;
+  return party.mode === 'duel' ? totalTurns(party) : INFINITE_TURNS;
+}
+
 function throwsLeft() {
-  return level.throws - throwsUsed;
+  // hose water is spent continuously, so round up: a sliver of water still counts as a second
+  return Math.max(0, Math.ceil(totalThrows() - throwsUsed - 1e-6));
 }
 
 let lastStats = '';
@@ -229,6 +294,98 @@ function refreshStats() {
   if (key === lastStats) return;
   lastStats = key;
   ui.setStats(left, score);
+}
+
+function startSolo(index: number) {
+  party = null;
+  loadLevel(index);
+}
+
+function startParty(index: number, players: number) {
+  const lvl = levels[index];
+  const mode = partyModeFor(lvl);
+  if (!mode) return startSolo(index);
+  party = createParty(mode, players, lvl.throws);
+  loadLevel(index);
+  announceTurn();
+}
+
+function restart() {
+  if (party) startParty(levelIndex, party.players);
+  else loadLevel(levelIndex);
+}
+
+function refreshParty() {
+  if (!party) {
+    ui.setParty(null);
+    return;
+  }
+  const p = party;
+  ui.setParty(
+    p.scores.map((score, i) => ({
+      name: playerLabel(i),
+      score: p.mode === 'duel' ? score : null,
+      active: i === p.current && !p.winners,
+      out: p.out[i],
+    })),
+  );
+}
+
+function announceTurn() {
+  if (!party) return;
+  turnBaseline = blockScore(blockStates());
+  ui.toast(`${playerLabel(party.current)}'s turn`);
+  refreshParty();
+}
+
+/** Party: the current player's throw has resolved. Score it and pass the turn. */
+function endPartyTurn() {
+  if (!party) return;
+  turnActive = false;
+  const who = party.current;
+  if (party.mode === 'duel') {
+    const score = blockScore(blockStates());
+    const gained = score - turnBaseline;
+    turnBaseline = score; // set now: the next player may act before the toast ends
+    endDuelTurn(party, gained);
+    ui.toast(`${playerLabel(who)} ${gained > 0 ? '+' : ''}${gained}`);
+    if (!party.winners) setTimeout(announceTurn, 900);
+  } else {
+    endJengaTurn(party);
+    if (!party.winners) announceTurn();
+  }
+  refreshParty();
+  if (party.winners) finishParty();
+}
+
+/** Party: the Jenga tower fell on the current player's watch. */
+function partyTopple() {
+  if (!party) return;
+  const p = party;
+  const loser = p.current;
+  const rebuild = topple(p);
+  playResult(false);
+  refreshParty();
+  if (!rebuild) return finishParty();
+  phase = 'lost'; // freeze the sim until the rebuild
+  ui.toast(`${playerLabel(loser)} toppled it!`);
+  setTimeout(() => {
+    if (party !== p || phase !== 'lost') return; // the player left or restarted meanwhile
+    loadLevel(levelIndex);
+    announceTurn();
+  }, 1600);
+}
+
+function finishParty() {
+  if (!party?.winners) return;
+  phase = 'won';
+  playResult(true);
+  const names = party.winners.map(playerLabel).join(' & ');
+  const detail =
+    party.mode === 'duel'
+      ? party.scores.map((s, i) => `${playerLabel(i)} ${s}`).join(' · ')
+      : `${names} is the last one standing${party.winners.length > 1 ? ' (turn limit reached)' : ''}`;
+  ui.showPartyResult(party.winners.length === 1 ? `${names} wins!` : `Tie: ${names}`, detail);
 }
 
 function clearLevel() {
@@ -265,6 +422,10 @@ function loadLevel(index: number) {
   lastStats = '';
   collapsed = false;
   grab.entity = null;
+  turnActive = false;
+  spraying = false;
+  beamLeft = 0;
+  beam.visible = false;
   phase = 'playing';
 
   const [sx, sz] = level.platform.size;
@@ -300,6 +461,7 @@ function loadLevel(index: number) {
       boxGeo,
       new THREE.MeshStandardMaterial({
         color: def.color,
+        map: markTexture(type), // shape marking, so types differ by more than colour
         roughness: type === 'gem' ? 0.25 : 0.6,
         metalness: type === 'gem' ? 0.3 : 0,
       }),
@@ -361,6 +523,8 @@ function loadLevel(index: number) {
   syncRender(1);
   refreshStats();
   ui.setLevel(level);
+  refreshParty();
+  renderer.shadowMap.needsUpdate = true;
 }
 
 function frameCamera() {
@@ -510,6 +674,45 @@ function impactKind(a: Blaster | undefined, b: Blaster | undefined): ImpactKind 
   return 'thud';
 }
 
+/** Run a block's behaviour for an impact of `speed` m/s; `a` and `b` are the two colliding entities. */
+function triggerBlock(
+  e: BlockEntity,
+  speed: number,
+  a: Blaster | undefined,
+  b: Blaster | undefined,
+  toVanish: Set<BlockEntity>,
+) {
+  const def = BLOCKS[e.type];
+  if (speed < (def.triggerSpeed ?? 0)) return;
+  if (def.behaviour === 'explode') {
+    scheduleBlast(e, 0);
+  } else if (def.behaviour === 'chemical') {
+    // only a chemical-on-chemical touch sets it off
+    if (a && b && 'type' in a && 'type' in b && a.type === 'chemical' && b.type === 'chemical') {
+      scheduleBlast(e, 0);
+    }
+  } else if (def.behaviour === 'fireworks') {
+    ignite(e);
+  } else if (def.behaviour === 'float') {
+    e.body.setGravityScale(def.gravityScale ?? -0.25, true); // stays put until something disturbs it
+  } else if (def.behaviour === 'jingle' && simTime - e.lastHit > HIT_COOLDOWN) {
+    e.lastHit = simTime;
+    playNote(JINGLE_NOTES[e.note]);
+  } else if (def.behaviour === 'vanish' && simTime - e.lastHit > HIT_COOLDOWN) {
+    e.lastHit = simTime;
+    e.hitsLeft--;
+    if (e.hitsLeft <= 0) toVanish.add(e);
+  }
+}
+
+function vanishAll(toVanish: Set<BlockEntity>) {
+  for (const e of toVanish) {
+    particles.burst(e.currPos, BLOCKS[e.type].color, 14, 4);
+    playVanish();
+    removeBlock(e);
+  }
+}
+
 function handleImpacts() {
   const toVanish = new Set<BlockEntity>();
   events.drainCollisionEvents((h1, h2, started) => {
@@ -525,35 +728,110 @@ function handleImpacts() {
     const bombBall = [a, b].find((e): e is BallEntity => !!e && 'tool' in e && !!TOOLS[e.tool].explodes);
     if (blocksHit.length === 0 && !bombBall) return;
     if (bombBall && speed >= BOMB_BALL_TRIGGER_SPEED) scheduleBlast(bombBall, 0);
-    for (const e of blocksHit) {
-      const def = BLOCKS[e.type];
-      if (speed < (def.triggerSpeed ?? 0)) continue;
-      if (def.behaviour === 'explode') {
-        scheduleBlast(e, 0);
-      } else if (def.behaviour === 'chemical') {
-        // only a chemical-on-chemical touch sets it off
-        if (a && b && 'type' in a && 'type' in b && a.type === 'chemical' && b.type === 'chemical') {
-          scheduleBlast(e, 0);
-        }
-      } else if (def.behaviour === 'fireworks') {
-        ignite(e);
-      } else if (def.behaviour === 'float') {
-        e.body.setGravityScale(def.gravityScale ?? -0.25, true); // stays put until something disturbs it
-      } else if (def.behaviour === 'jingle' && simTime - e.lastHit > HIT_COOLDOWN) {
-        e.lastHit = simTime;
-        playNote(JINGLE_NOTES[e.note]);
-      } else if (def.behaviour === 'vanish' && simTime - e.lastHit > HIT_COOLDOWN) {
-        e.lastHit = simTime;
-        e.hitsLeft--;
-        if (e.hitsLeft <= 0) toVanish.add(e);
-      }
-    }
+    for (const e of blocksHit) triggerBlock(e, speed, a, b, toVanish);
   });
-  for (const e of toVanish) {
-    particles.burst(e.currPos, BLOCKS[e.type].color, 14, 4);
-    playVanish();
-    removeBlock(e);
+  vanishAll(toVanish);
+}
+
+// ---------- laser and hose ----------
+const beamGeo = new THREE.BufferGeometry();
+beamGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(6), 3));
+const beamMat = new THREE.LineBasicMaterial({ color: 0xff3864, transparent: true, depthTest: false });
+const beam = new THREE.Line(beamGeo, beamMat);
+beam.renderOrder = 11;
+beam.frustumCulled = false;
+beam.visible = false;
+scene.add(beam);
+
+const nozzle = new THREE.Vector3();
+const beamEnd = new THREE.Vector3();
+const beamDir = new THREE.Vector3();
+const sprayHit = new THREE.Vector3();
+
+/** Where beams start: just in front of the camera, slightly below the view centre (same as a thrown ball). */
+function updateNozzle() {
+  camera.getWorldDirection(beamDir);
+  nozzle.copy(camera.position).addScaledVector(beamDir, 1.5);
+  nozzle.y -= 0.6;
+}
+
+function showBeam(color: number, opacity: number) {
+  const pos = beamGeo.getAttribute('position') as THREE.BufferAttribute;
+  pos.setXYZ(0, nozzle.x, nozzle.y, nozzle.z);
+  pos.setXYZ(1, beamEnd.x, beamEnd.y, beamEnd.z);
+  pos.needsUpdate = true;
+  beamMat.color.setHex(color);
+  beamMat.opacity = opacity;
+  beam.visible = true;
+}
+
+/** Cast the camera ray through a screen point; fills `beamEnd`/`beamDir` and returns the hit, if any. */
+function castBeam(px: number, py: number, range: number) {
+  ndc.set((px / innerWidth) * 2 - 1, -(py / innerHeight) * 2 + 1);
+  raycaster.setFromCamera(ndc, camera);
+  const ray = raycaster.ray;
+  const hit = world.castRay(new RAPIER.Ray(ray.origin, ray.direction), range, true);
+  beamEnd
+    .copy(ray.direction)
+    .multiplyScalar(hit ? hit.timeOfImpact : range)
+    .add(ray.origin);
+  updateNozzle();
+  beamDir.copy(beamEnd).sub(nozzle).normalize();
+  return hit;
+}
+
+/** Instant hit: a small nudge plus the block's hit behaviour (pops bombs, vanish and jingle blocks). */
+function fireLaser(px: number, py: number) {
+  const hit = castBeam(px, py, 80);
+  playLaser();
+  beamLeft = BEAM_SECONDS;
+  showBeam(TOOLS.laser.color, 1);
+  if (!hit) return;
+  particles.burst(beamEnd, TOOLS.laser.color, 8, 3);
+  const owner = colliderOwner.get(hit.collider.handle);
+  if (!owner || !('type' in owner) || !BLOCKS[owner.type].mobile) return;
+  owner.body.applyImpulseAtPoint(beamDir.clone().multiplyScalar(LASER_IMPULSE), beamEnd, true);
+  const toVanish = new Set<BlockEntity>();
+  triggerBlock(owner, LASER_SPEED, owner, undefined, toVanish);
+  vanishAll(toVanish);
+}
+
+/** One physics step of water: push the block under the nozzle and its neighbours along the stream. */
+function applyHose() {
+  if (!spraying) return;
+  if (throwsLeft() <= 0 || phase !== 'playing') {
+    spraying = false;
+    beam.visible = false;
+    return;
   }
+  throwsUsed += STEP;
+  lastMotion = simTime;
+  const hit = castBeam(aim.x, aim.y, HOSE_RANGE);
+  showBeam(TOOLS.hose.color, 0.55);
+  if (!hit) return;
+  sprayHit.copy(beamEnd);
+  if (Math.random() < 0.5) particles.burst(sprayHit, TOOLS.hose.color, 1, 2);
+  const direct = colliderOwner.get(hit.collider.handle);
+  const reach = HOSE_SPLASH + 0.6;
+  for (const e of blocks) {
+    if (e.status === 'removed' || !BLOCKS[e.type].mobile) continue;
+    const d = e.currPos.distanceTo(sprayHit);
+    if (d > reach && e !== direct) continue;
+    const falloff = 1 - 0.6 * Math.min(d / reach, 1);
+    const impulse = beamDir.clone().multiplyScalar(HOSE_FORCE * falloff * STEP);
+    if (e === direct) e.body.applyImpulseAtPoint(impulse, sprayHit, true);
+    else e.body.applyImpulse(impulse, true);
+  }
+}
+
+/** True when nothing can move on its own, so the physics step can be skipped. */
+function worldAsleep() {
+  if (pendingBlasts.length > 0 || pendingLaunches.length > 0 || grab.entity || spraying) return false;
+  for (const b of balls) if (!b.body.isSleeping()) return false;
+  for (const e of blocks) {
+    if (e.status !== 'removed' && BLOCKS[e.type].mobile && !e.body.isSleeping()) return false;
+  }
+  return true;
 }
 
 // ---------- fixed step + interpolation ----------
@@ -612,7 +890,9 @@ function popupFor(e: BlockEntity) {
 
 function stepPhysics() {
   applyGrabForce();
-  world.step(events);
+  applyHose();
+  physicsIdle = worldAsleep();
+  if (!physicsIdle) world.step(events);
   simTime += STEP;
   handleImpacts();
 
@@ -632,7 +912,7 @@ function stepPhysics() {
   }
 
   const fallY = level.platform.top - FALL_MARGIN;
-  let moving = pendingBlasts.length > 0 || grab.entity !== null; // holding a block is never "settled"
+  let moving = pendingBlasts.length > 0 || grab.entity !== null || spraying; // holding or soaking is never "settled"
   let allAsleep = true;
   const jenga = level.goal.type === 'jenga';
   for (const e of blocks) {
@@ -683,7 +963,12 @@ function stepPhysics() {
   if (phase !== 'playing') return;
   // a fallen tower is final, so it ends the level without waiting for the scene to settle
   const settled = throwsUsed > 0 && isSettled(simTime - lastMotion, allAsleep && !moving);
-  if (settled || (jenga && collapsed)) finishIfDone();
+  if (party) {
+    if (jenga && collapsed) partyTopple();
+    else if (turnActive && settled) endPartyTurn();
+  } else if (settled || (jenga && collapsed)) {
+    finishIfDone();
+  }
 }
 
 function finishIfDone() {
@@ -721,15 +1006,28 @@ let throwPointer: number | null = null;
 const activeTouches = new Set<number>();
 
 function canThrow() {
-  return phase === 'playing' && throwsLeft() > 0;
+  return phase === 'playing' && throwsLeft() > 0 && !turnActive; // party: one action per turn
 }
 
 function isGrabTool() {
   return TOOLS[level.tool].grab === true;
 }
 
+function isLaserTool() {
+  return TOOLS[level.tool].laser === true;
+}
+
+function isHoseTool() {
+  return TOOLS[level.tool].hose === true;
+}
+
+/** Laser and hose aim along the camera ray instead of lobbing a ball. */
+function isBeamTool() {
+  return isLaserTool() || isHoseTool();
+}
+
 // last known pointer position, for the aim preview (mouse hover or active throw)
-const aim = { x: 0, y: 0, visible: false };
+const aim = { x: innerWidth / 2, y: innerHeight / 2, visible: false };
 
 // ---------- grab: pick a block and drag it on a soft spring ----------
 const grab = {
@@ -765,6 +1063,7 @@ function beginGrab(px: number, py: number): boolean {
   grab.entity = pick.entity;
   pick.entity.grabbedOnce = true;
   throwsUsed++; // each pick-up uses one grab
+  if (party) turnActive = true;
   lastMotion = simTime;
   refreshStats();
   return true;
@@ -814,6 +1113,34 @@ muteBtn.addEventListener('click', () => {
   unlockAudio();
 });
 
+const musicBtn = document.getElementById('music-btn') as HTMLElement;
+function showMusic() {
+  musicBtn.style.opacity = isMusicOn() ? '1' : '0.5';
+  musicBtn.setAttribute('aria-pressed', String(isMusicOn()));
+}
+showMusic();
+musicBtn.addEventListener('click', () => {
+  setMusicOn(!isMusicOn());
+  showMusic();
+  unlockAudio();
+});
+
+const qualityBtn = document.getElementById('quality-btn') as HTMLElement;
+function showQuality() {
+  qualityBtn.textContent = quality[0].toUpperCase() + quality.slice(1);
+}
+showQuality();
+qualityBtn.addEventListener('click', () => {
+  quality = QUALITIES[(QUALITIES.indexOf(quality) + 1) % QUALITIES.length];
+  try {
+    localStorage.setItem('blox.quality.v1', quality);
+  } catch {
+    // ignore: the choice just is not remembered
+  }
+  applyQuality();
+  showQuality();
+});
+
 canvas.addEventListener('pointerdown', (ev) => {
   unlockAudio(); // browsers start audio only after a user gesture
   if (ev.pointerType === 'touch') {
@@ -821,6 +1148,7 @@ canvas.addEventListener('pointerdown', (ev) => {
     if (activeTouches.size > 1) {
       throwPointer = null; // second finger = orbit/pinch, cancel the throw
       grab.entity = null;
+      spraying = false;
       return;
     }
   }
@@ -828,6 +1156,7 @@ canvas.addEventListener('pointerdown', (ev) => {
   aim.x = ev.clientX;
   aim.y = ev.clientY;
   if (isGrabTool() && !beginGrab(ev.clientX, ev.clientY)) return;
+  if (isHoseTool()) spraying = true;
   throwPointer = ev.pointerId;
   aim.visible = true;
   samples = [{ t: ev.timeStamp, x: ev.clientX, y: ev.clientY }];
@@ -854,6 +1183,11 @@ function endPointer(ev: PointerEvent, doThrow: boolean) {
   if (ev.pointerId !== throwPointer) return;
   throwPointer = null;
   if (ev.pointerType !== 'mouse') aim.visible = false;
+  if (spraying) {
+    spraying = false;
+    beam.visible = false;
+    return;
+  }
   if (grab.entity) {
     grab.entity = null; // let go
     return;
@@ -866,14 +1200,89 @@ function endPointer(ev: PointerEvent, doThrow: boolean) {
 canvas.addEventListener('pointerup', (ev) => endPointer(ev, true));
 canvas.addEventListener('pointercancel', (ev) => endPointer(ev, false));
 
+// ---------- keyboard: arrows aim, Space is the one-button throw / grab / spray ----------
+const keysDown = new Set<string>();
+const AIM_KEYS = ['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'];
+let chargeStart: number | null = null; // performance.now() when Space went down on a throwing tool
+
+function flickForTier(tier: number) {
+  return [0, params.flickLight, params.flickMedium, params.flickFull][tier];
+}
+
+function spaceDown() {
+  if (phase !== 'playing') return;
+  if (isGrabTool()) {
+    if (grab.entity) grab.entity = null;
+    else if (canThrow()) beginGrab(aim.x, aim.y);
+  } else if (isHoseTool()) {
+    if (canThrow()) spraying = true;
+  } else if (isLaserTool()) {
+    launch(aim.x, aim.y, 0);
+  } else if (canThrow()) {
+    chargeStart = performance.now();
+  }
+}
+
+function spaceUp() {
+  if (spraying) {
+    spraying = false;
+    beam.visible = false;
+  }
+  if (chargeStart === null) return;
+  const tier = chargeTier((performance.now() - chargeStart) / 1000);
+  chargeStart = null;
+  launch(aim.x, aim.y, flickForTier(tier));
+}
+
 addEventListener('keydown', (ev) => {
+  unlockAudio();
   if (ev.code === 'Space') {
     ev.preventDefault();
-    launch(innerWidth / 2, innerHeight / 2, Number.POSITIVE_INFINITY); // quick full-power throw
+    if (!ev.repeat) spaceDown();
   } else if (ev.code === 'KeyR' && phase !== 'menu') {
-    loadLevel(levelIndex);
+    restart();
+  } else if (AIM_KEYS.includes(ev.code) || ['KeyQ', 'KeyE', 'KeyZ', 'KeyX'].includes(ev.code)) {
+    ev.preventDefault();
+    keysDown.add(ev.code);
   }
 });
+
+addEventListener('keyup', (ev) => {
+  keysDown.delete(ev.code);
+  if (ev.code === 'Space') spaceUp();
+});
+
+addEventListener('blur', () => {
+  keysDown.clear();
+  chargeStart = null;
+  spraying = false;
+});
+
+const orbitOffset = new THREE.Vector3();
+
+/** Move the aim crosshair and orbit/zoom the camera from held keys. */
+function applyKeys(dt: number) {
+  if (keysDown.size === 0 || phase === 'menu') return;
+  const dx = (keysDown.has('ArrowRight') ? 1 : 0) - (keysDown.has('ArrowLeft') ? 1 : 0);
+  const dy = (keysDown.has('ArrowDown') ? 1 : 0) - (keysDown.has('ArrowUp') ? 1 : 0);
+  if (dx || dy) {
+    aim.x = Math.min(Math.max(aim.x + dx * KEY_AIM_SPEED * dt, 0), innerWidth);
+    aim.y = Math.min(Math.max(aim.y + dy * KEY_AIM_SPEED * dt, 0), innerHeight);
+    aim.visible = true;
+  }
+  const turn = (keysDown.has('KeyE') ? 1 : 0) - (keysDown.has('KeyQ') ? 1 : 0);
+  const zoom = (keysDown.has('KeyX') ? 1 : 0) - (keysDown.has('KeyZ') ? 1 : 0);
+  if (turn || zoom) {
+    orbitOffset.copy(camera.position).sub(controls.target);
+    orbitOffset.applyAxisAngle(THREE.Object3D.DEFAULT_UP, turn * KEY_ORBIT_SPEED * dt);
+    const len = Math.min(
+      Math.max(orbitOffset.length() * (1 + zoom * dt), controls.minDistance),
+      controls.maxDistance,
+    );
+    camera.position.copy(controls.target).add(orbitOffset.setLength(len));
+    controls.update();
+  }
+}
 
 const ndc = new THREE.Vector2();
 const launchDir = new THREE.Vector3();
@@ -916,13 +1325,18 @@ function computeShot(px: number, py: number, flickSpeed: number) {
 }
 
 function launch(px: number, py: number, flickSpeed: number) {
-  if (!canThrow() || isGrabTool()) return;
-  const s = computeShot(px, py, flickSpeed);
-  spawnBall(s.origin, s.velocity);
+  if (!canThrow() || isGrabTool() || isHoseTool()) return;
+  if (isLaserTool()) {
+    fireLaser(px, py);
+  } else {
+    const s = computeShot(px, py, flickSpeed);
+    spawnBall(s.origin, s.velocity);
+    hudTier.textContent = tierNames[s.tier];
+  }
   throwsUsed++;
   lastMotion = simTime;
+  if (party) turnActive = true;
   refreshStats();
-  hudTier.textContent = tierNames[s.tier];
 }
 
 // ---------- aim preview: target ring + trajectory arc ----------
@@ -962,19 +1376,43 @@ function updateGrabPreview() {
   (ring.material as THREE.MeshBasicMaterial).color.setHex(tierColors[0]);
 }
 
+function updateBeamPreview() {
+  arc.visible = false;
+  const show = aim.visible && canThrow();
+  ring.visible = show;
+  if (!show) return;
+  const hit = castBeam(aim.x, aim.y, isHoseTool() ? HOSE_RANGE : 80);
+  ring.visible = hit !== null;
+  if (!hit) return;
+  ring.position.copy(beamEnd);
+  ring.lookAt(camera.position);
+  const color = isHoseTool() ? TOOLS.hose.color : TOOLS.laser.color;
+  (ring.material as THREE.MeshBasicMaterial).color.setHex(color);
+}
+
 function updateAimPreview(now: number) {
   if (isGrabTool()) {
     updateGrabPreview();
     return;
   }
-  const pressing = throwPointer !== null;
+  if (isBeamTool()) {
+    updateBeamPreview();
+    return;
+  }
+  const charging = chargeStart !== null;
+  const pressing = throwPointer !== null || charging;
   const show = aim.visible && canThrow();
   ring.visible = arc.visible = show;
   if (!show) return;
 
   // live flick speed includes "now", so the preview drops as the pointer slows
-  const live = pressing ? [...samples, { t: now, x: aim.x, y: aim.y }] : [];
-  const speed = pressing ? releaseVelocity(live).speed : 0;
+  const live = pressing && !charging ? [...samples, { t: now, x: aim.x, y: aim.y }] : [];
+  const speed =
+    chargeStart !== null
+      ? flickForTier(chargeTier((performance.now() - chargeStart) / 1000))
+      : pressing
+        ? releaseVelocity(live).speed
+        : 0;
   const s = computeShot(aim.x, aim.y, speed);
   hudTier.textContent = pressing ? tierNames[s.tier] : '-';
   if (pressing) hudFlick.textContent = String(Math.round(speed));
@@ -1024,7 +1462,14 @@ gui
 gui.add(params, 'restart').name('Restart level (R)');
 gui.close();
 
+if (import.meta.env.PROD && 'serviceWorker' in navigator) {
+  navigator.serviceWorker.register(`${import.meta.env.BASE_URL}sw.js`).catch(() => {
+    // offline support is optional
+  });
+}
+
 // ---------- main loop ----------
+initMusic();
 loadLevel(0);
 phase = 'menu';
 ui.showMenu(levels, loadProgress());
@@ -1043,7 +1488,14 @@ function frame(now: number) {
   }
   if (steps === MAX_STEPS_PER_FRAME) acc = 0; // spiral-of-death guard
   syncRender(acc / STEP);
+  applyKeys(dt);
   controls.update();
+  if (!physicsIdle) renderer.shadowMap.needsUpdate = true; // shadows only change while bodies move
+  if (beamLeft > 0) {
+    beamLeft -= dt;
+    beamMat.opacity = Math.max(beamLeft, 0) / BEAM_SECONDS;
+    if (beamLeft <= 0 && !spraying) beam.visible = false;
+  }
   updateAimPreview(now);
   particles.update(dt, params.gravity);
   shake.update(dt);
@@ -1060,7 +1512,7 @@ requestAnimationFrame(frame);
   blocks,
   balls,
   loadLevel: (i: number) => {
-    loadLevel(i);
+    startSolo(i);
     ui.hideMenu();
   },
   phase: () => phase,
@@ -1071,6 +1523,7 @@ requestAnimationFrame(frame);
   awake: () =>
     blocks.filter((e) => e.status !== 'removed' && BLOCKS[e.type].mobile && !e.body.isSleeping()).length,
   launch,
+  party: () => party,
   grabAt: (px: number, py: number) => {
     aim.x = px;
     aim.y = py;

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { powerTier, releaseVelocity } from './throw';
+import { chargeTier, powerTier, releaseVelocity } from './throw';
 
 describe('releaseVelocity', () => {
   it('is zero for a tap', () => {
@@ -27,5 +27,12 @@ describe('powerTier', () => {
     expect(powerTier(300, th)).toBe(1);
     expect(powerTier(1000, th)).toBe(2);
     expect(powerTier(5000, th)).toBe(3);
+  });
+});
+
+describe('chargeTier', () => {
+  it('ping-pongs through the four tiers', () => {
+    const tiers = [0, 0.4, 0.8, 1.2, 1.6, 2.0, 2.4].map((t) => chargeTier(t));
+    expect(tiers).toEqual([0, 1, 2, 3, 2, 1, 0]);
   });
 });

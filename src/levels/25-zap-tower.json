@@ -1,0 +1,61 @@
+{
+  "id": "laser-1",
+  "name": "Zap Tower",
+  "theme": "meadow",
+  "tool": "laser",
+  "throws": 4,
+  "goal": {
+    "type": "toppleGems"
+  },
+  "medals": {
+    "bronze": 300,
+    "silver": 400,
+    "gold": 500
+  },
+  "blocks": [
+    {
+      "type": "normal",
+      "pos": [0, 0.5, 0]
+    },
+    {
+      "type": "normal",
+      "pos": [0, 1.5, 0]
+    },
+    {
+      "type": "normal",
+      "pos": [0, 2.5, 0]
+    },
+    {
+      "type": "normal",
+      "pos": [0, 3.5, 0]
+    },
+    {
+      "type": "normal",
+      "pos": [0, 4.5, 0]
+    },
+    {
+      "type": "bomb",
+      "pos": [0, 5.5, 0]
+    },
+    {
+      "type": "gem",
+      "pos": [0, 6.5, 0]
+    },
+    {
+      "type": "normal",
+      "pos": [-1, 0.5, 0]
+    },
+    {
+      "type": "normal",
+      "pos": [1, 0.5, 0]
+    },
+    {
+      "type": "gem",
+      "pos": [-1, 1.5, 0]
+    },
+    {
+      "type": "gem",
+      "pos": [1, 1.5, 0]
+    }
+  ]
+}

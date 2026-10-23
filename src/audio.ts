@@ -42,6 +42,11 @@ export function unlockAudio() {
   if (ctx.state === 'suspended') void ctx.resume();
 }
 
+/** The running audio context, or null while muted or not yet unlocked. Used by the music scheduler. */
+export function audioContext(): AudioContext | null {
+  return out();
+}
+
 function out(): AudioContext | null {
   return muted || !ctx || ctx.state !== 'running' ? null : ctx;
 }
@@ -154,4 +159,12 @@ export function playResult(won: boolean) {
       if (out()) tone(c, f, f, 0.2, 0.25, 'triangle');
     }, i * 120);
   }
+}
+
+/** Short rising zap for the laser tool. */
+export function playLaser() {
+  const c = out();
+  if (!c) return;
+  tone(c, 1800, 300, 0.14, 0.2, 'sawtooth');
+  tone(c, 900, 150, 0.1, 0.12, 'square');
 }
