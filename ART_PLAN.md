@@ -1,0 +1,185 @@
+# Look, Sound & Feel Plan
+
+As of 2026-10-24 · Companion to `PLAN.md` (replaces its Phase 4 line "Final name, logo, original art and music; launch page")
+
+## Summary
+
+The gameplay works, but the game still looks like a prototype: flat-coloured boxes, a green disc for ground, a plain sky, a beeping music loop and a debug HUD. This plan turns it into a bright toy diorama with characterful cube animals, layered destruction effects, a soundtrack per world, and a real name, logo and title screen.
+- **Direction:** "toy diorama". Every level is a small floating island; blocks are painted wooden toys; the block colour code always wins over decoration.
+- **Everything is made in code:** textures painted on canvas, props and characters built from primitives, music and sound synthesised. Nothing to license, and it all works offline.
+- **Order:** materials and light first (biggest win for the least work), then juice, then name/logo/title screen, then worlds, characters and music.
+- **Gate per stage:** before/after screenshots per theme, plus a play session on desktop and phone.
+
+## What the original felt like
+
+This summary comes from reviews and previews; footage hasn't been reviewed yet. Watch the YouTube links in `PLAN.md` ("Reference media") and note anything below that doesn't match.
+
+| Area        | What reviewers saw                                                                                                                                                                                                                                                                                                                                                                                                                             | Take for us                                                         |
+| ----------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------- |
+| Look        | "Bright, clear and simple"; every block identifiable at a glance; unobtrusive backgrounds ([Pocket Gamer](https://www.pocketgamer.com/steven-spielbergs-boom-blox/review/)). "Colours galore", "neat and inoffensive" ([Cubed3](https://www.cubed3.com/games/reviews/wii/boom-blox)). Very bright palette, well-defined textures ([Everyeye](https://www.everyeye.it/articoli/anteprima-boom-blox-7563.html))                                  | Saturated, readable blocks; calm backgrounds                        |
+| Criticism   | "Simple, colorful, and bland"; slowdown during explosions and camera moves ([Nintendo World Report](https://www.nintendoworldreport.com/review/15982/boom-blox-wii))                                                                                                                                                                                                                                                                           | Aim higher on materials and light; keep a strict performance budget |
+| Characters  | Cube-shaped animals (cows, bears, sheep, monkeys on the title screen); 31 in total; they wander, dance, lay blocks, throw things ([Cubed3](https://www.cubed3.com/games/reviews/wii/boom-blox), [Time Extension](https://www.timeextension.com/games/wii/boom_blox)). Spielberg added them because bare levels felt empty ([Everyeye](https://www.everyeye.it/articoli/anteprima-boom-blox-7563.html))                                         | Characters are what makes the levels feel alive                     |
+| Worlds      | Tiki, Medieval, Frontier, Haunted ([Wikipedia](https://en.wikipedia.org/wiki/Boom_Blox))                                                                                                                                                                                                                                                                                                                                                       | Five original themes (below)                                        |
+| Destruction | "Thunderous" explosions, chain reactions, a bullet-time view of collapses ([Everyeye](https://www.everyeye.it/articoli/anteprima-boom-blox-7563.html)); praised physics sounds — nearly everything makes a sound                                                                                                                                                                                                                               | Layered explosions, slow-mo push-in, a sound for every contact      |
+| Menus       | Menu items are blocks you can push around ([Cubed3](https://www.cubed3.com/games/reviews/wii/boom-blox)); video previews that hide the screen were disliked ([NWR](https://www.nintendoworldreport.com/review/15982/boom-blox-wii))                                                                                                                                                                                                            | Playable title screen; no previews covering the UI                  |
+| Music       | Mothersbaugh and co-composers. Main theme with tribal percussion, playful and goofy; "Powdered Wig" an Irish-folk jig; country tracks such as "Blocks Up Hoe Down"; "Fear Anytime" eerie; "Ready, Set, Edit" mellow and funky ([OSV](http://www.originalsoundversion.com/bang-for-the-blocks-boom-blox-soundtrack-review/)). Some found it tiresome over long sessions ([NWR](https://www.nintendoworldreport.com/review/15982/boom-blox-wii)) | One genre per world, A/B sections, adaptive layers                  |
+| Voices      | A character's voice compared to the Hamster Dance ([NWR](https://www.nintendoworldreport.com/review/15982/boom-blox-wii))                                                                                                                                                                                                                                                                                                                      | Soft, short, rate-limited voices with their own volume              |
+
+## Art direction
+
+**Pillars**
+1. A small toy island floating in a soft sky, framed like a diorama.
+2. Blocks are painted wooden toys with bevelled edges and visible material.
+3. The block colour code is sacred: gameplay colours and shape markings always win over decoration.
+4. Every hit gives feedback: sound, dust, a pop, a shake.
+5. 60 fps on a mid-range phone at Medium quality.
+
+**Palette** (shared by the 3D scene and the HTML UI; current block colours stay)
+
+| Token                 | Hex                               | Use                             |
+| --------------------- | --------------------------------- | ------------------------------- |
+| ink                   | `#023047`                         | text, outlines                  |
+| sky-top / sky-horizon | `#5fa8d3` / `#cfeaf6`             | meadow sky gradient             |
+| accent                | `#fb8500`                         | buttons, score pops             |
+| grass                 | `#7bc47f`                         | meadow island top               |
+| earth                 | `#b08968`                         | platform, island sides          |
+| gem / point / bomb    | `#3da5ff` / `#ffc400` / `#e63946` | from `src/blocks.ts`, unchanged |
+
+Each theme adds its own sky, island and prop colours without touching block colours.
+
+**Do / don't**
+- Do: original characters, names, music and levels; describe the game as "inspired by Boom Blox".
+- Don't: EA assets, screenshots or audio; "Boom" or "Blox" in the final name; copies of the original's specific characters (sheep knights, gorilla mother, beaver miner, kittens).
+
+## Stages
+
+### A. Materials and light
+
+- [x] Bevelled blocks with `RoundedBoxGeometry` (`three/examples/jsm/geometries/RoundedBoxGeometry.js`); keep one `InstancedMesh` per block type (`loadLevel` in `src/main.ts`)
+- [x] Canvas-painted material per block type (`blockTexture()` in `src/marks.ts`) so the shape markings stay: wood grain, brushed steel, frosted ice, faceted gem, gold point block with an embossed "100", bomb with fuse, chemical with bubbles
+- [x] Gem glints (drifting particles); metallic point blocks
+- [x] Tone mapping (Neutral: AgX/ACES washed out the toy colours), warm key light, cool rim light, hemisphere fill
+- [x] Gradient sky shader, low-poly clouds, fog matched to the horizon, soft contact-shadow blob under the pedestal, sky-based environment lighting
+- [x] Island base instead of the flat disc: grassy top, earthy sides, floating in the sky
+- [x] Quality tiers (`QUALITY_SETTINGS` in `src/main.ts`) gain toggles for the extras (rim light, glints)
+
+### B. Juice and camera
+
+- [ ] Layered explosions on top of `Particles` / `Shake` in `src/fx.ts`: flash sprite, shockwave ring, smoke puffs, chunky debris (all pooled)
+- [ ] Dust puffs on heavy impacts, vanish "poof", gem sparkle trail, ball motion trail
+- [ ] Brief squash on blocks the ball hits
+- [ ] "CHAIN ×4!" counter with a combo bonus; slow-mo (`slowUntil`) adds a camera push-in for a bullet-time feel
+- [ ] Level intro: 2 s orbit fly-in ending at the `frameCamera()` pose, skippable with any input
+- [ ] Win: slow orbit behind the medal screen
+- [ ] Styled score pops: bigger, bouncier, coloured by block type
+
+### C. Worlds
+
+Driven by the existing `theme` field in `src/level.ts`. Props are decoration only: no colliders, outside the play area, merged into one draw call per theme.
+
+| Theme                  | Sky and island                          | Props (built from primitives)                      | Music                                     |
+| ---------------------- | --------------------------------------- | -------------------------------------------------- | ----------------------------------------- |
+| Meadow (Explore, menu) | blue sky, grassy island                 | trees, flowers, fence, windmill                    | bouncy marimba and tuba                   |
+| Tiki Isle              | sunset, sandy island in a turquoise sea | palms, torches, totems, huts                       | log drums and plucked strings             |
+| Castle Hill            | morning sky, green hill                 | banners, towers, drawbridge, hay bales             | recorder-and-lute jig in 6/8              |
+| Dusty Gulch            | hot orange sky, red rock mesa           | cacti, barrels, water tower, cow skull             | banjo hoedown in 2/4                      |
+| Spooky Manor           | purple night, moon                      | tombstones, pumpkins, dead trees, manor silhouette | minor harpsichord waltz with a "theremin" |
+- [ ] Theme system: sky colours, island materials, prop set, distant silhouette ring, music track, ambient sound bed
+- [ ] All five themes; re-theme existing levels and group them into worlds (ties in with Explore/Adventure in `PLAN.md` Phase 2)
+
+### D. Characters (cube animals)
+
+Built in code from boxes (body, head, ears, eyes, snout): original, and no asset pipeline needed.
+
+| World        | Example species       |
+| ------------ | --------------------- |
+| Meadow       | goat, hen             |
+| Tiki Isle    | frog, parrot          |
+| Castle Hill  | pig squire            |
+| Dusty Gulch  | armadillo             |
+| Spooky Manor | bat, ghost-sheet blob |
+- [ ] Each character is one dynamic Rapier box body; child meshes carry a procedural animation state machine:
+  - idle: bob, blink, look at the cursor or ball
+  - alert: a ball is coming
+  - panic: the stack under it wobbles
+  - tumble: flailing while airborne
+  - cheer / sad: on the result screen
+- [ ] Level schema: optional `characters: [{ kind, pos, role }]`, where role is `friend` (must stay on the platform), `rival` (points for knocking it off) or `decor`
+- [ ] `protectFriends` goal option in `src/rules.ts`, with Vitest tests
+- [ ] Voices: short, soft formant blips, rate-limited, with their own volume slider
+- [ ] Character kinds are data (like `BLOCKS` in `src/blocks.ts`), and the state machine can take new states, leaving room for D2
+- [ ] At most 6 characters per level
+
+### D2. Later: full character behaviours (big scope)
+
+Characters that act on their own, like the original's 31, with original designs:
+- walk along the structure
+- lay blocks (for example a hen laying bomb blocks)
+- throw things at rivals
+- carry or collect blocks
+- attack or chase other characters
+
+Needs a behaviour scheduler, simple path-finding on block tops, per-kind action hooks fed by the collision event queue, schema fields for behaviour parameters, and levels built around them (rescue and defend stories). Start only after D ships.
+
+### E. Music and sound
+
+- [ ] Richer synthesis in `src/music.ts`, still sample-free: FM marimba and bells, Karplus-Strong plucks (banjo, lute, ukulele), synthesised drums (log drum, kick, shaker), a soft reverb send
+- [ ] One track per world (see the table under C), plus a mellow funky bass track for the editor; 16–32 bar loops with A/B sections so they wear less
+- [ ] Adaptive music: a percussion layer fades in during chains; music ducks under explosions
+- [ ] Win, lose and gold-medal stingers in place of `playResult()` in `src/audio.ts`
+- [ ] SFX in `src/audio.ts`: Karplus-Strong wood clacks, layered booms (sub plus crackle), gem chimes, coin pings for point blocks, whoosh by throw tier
+- [ ] Separate volume for music, effects and voices
+
+### F. Name, logo, UI and launch page
+
+**Name shortlist** (working names; each still needs a check for existing games, trademarks and a free `.com` / `.io` before the user picks)
+
+| Candidate    | Why                                   |
+| ------------ | ------------------------------------- |
+| Toppletown   | says what you do; friendly place name |
+| Clatterbox   | the sound of falling blocks           |
+| Tumble Isle  | fits the floating-island look         |
+| Wobblewood   | wooden toys, wobbly towers            |
+| Teeter Tower | Jenga feel                            |
+| Bonk Island  | short and silly                       |
+| Stackabout   | stacking plus knockabout              |
+| Crumble Cove | destruction plus a world name         |
+- [ ] Shortlist checked; the user picks a name
+- [ ] Logo: SVG wordmark whose letters are stacked toy blocks, one tipping over; regenerate the PWA icons in `public/` from it
+- [ ] Font: chunky rounded open-licensed font (Fredoka or Baloo 2, OFL), self-hosted so it works offline
+- [ ] Title screen: a live 3D scene where you can knock over the logo blocks
+- [ ] World map with level islands instead of the card grid
+- [ ] Throws shown as ball icons; animated medal drop on the result screen
+- [ ] Debug HUD and lil-gui only in development (`import.meta.env.DEV`)
+- [ ] Launch page as a second Vite page (`about.html`): hero clip captured with Playwright, feature list, Play button, credits, and "Inspired by Boom Blox (EA, 2008). Not affiliated."
+
+## Performance budget
+
+- 60 fps on a mid-range phone at Medium quality
+- At most 2 draw calls per block type; props merged per theme into one draw call
+- Pooled particles; at most 6 characters per level
+- Low quality turns off the rim light, extra particles and prop shadows
+
+## Order and gates
+
+A → B → F (name, logo, title screen) → C → D → E, with D2 later.
+
+Gate for each stage:
+- [x] `scripts/shots.mjs` (Playwright via `playwright-core` and the system Chromium) saves one screenshot per theme; compare before and after
+- [ ] Played on desktop and on a phone, at Medium and Low quality
+
+## Open questions
+
+- [ ] Should characters ever be the goal of whole levels (rescue stories), or stay an extra?
+- [ ] Should music change per level or only per world?
+- [ ] Is the launch page part of this site or a separate repo?
+
+## Sources
+
+- [Boom Blox — Wikipedia](https://en.wikipedia.org/wiki/Boom_Blox)
+- [Boom Blox review — Pocket Gamer](https://www.pocketgamer.com/steven-spielbergs-boom-blox/review/)
+- [Boom Blox review — Cubed3](https://www.cubed3.com/games/reviews/wii/boom-blox)
+- [Boom Blox preview — Everyeye (Italian)](https://www.everyeye.it/articoli/anteprima-boom-blox-7563.html)
+- [Boom Blox review — Nintendo World Report](https://www.nintendoworldreport.com/review/15982/boom-blox-wii)
+- [Bang for the Blocks: soundtrack review — Original Sound Version](http://www.originalsoundversion.com/bang-for-the-blocks-boom-blox-soundtrack-review/)
+- [Boom Blox — Time Extension](https://www.timeextension.com/games/wii/boom_blox)

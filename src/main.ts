@@ -2,6 +2,7 @@ import RAPIER from '@dimforge/rapier3d-compat';
 import GUI from 'lil-gui';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
+import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
 import {
   type ImpactKind,
   isMuted,
@@ -18,7 +19,7 @@ import {
 import { BLOCKS, type BlockType } from './blocks';
 import { disposeMesh, makeZoneMesh, Particles, Shake } from './fx';
 import { type Level, loadBundledLevels } from './level';
-import { markTexture } from './marks';
+import { blockTexture } from './marks';
 import { initMusic, isMusicOn, setMusicOn } from './music';
 import {
   createParty,
@@ -41,6 +42,17 @@ import {
   outcome,
   zoneMultiplier,
 } from './rules';
+import {
+  addLights,
+  CATCH_FLOOR_Y,
+  ISLAND_RADIUS,
+  makeClouds,
+  makeContactShadow,
+  makeEnvironment,
+  makeIsland,
+  makeSky,
+  SKY,
+} from './scene';
 import { chargeTier, type PointerSample, powerTier, releaseVelocity } from './throw';
 import { TOOL_IDS, TOOLS, type ToolId } from './tools';
 import { createUi } from './ui';
@@ -73,11 +85,13 @@ const KEY_ORBIT_SPEED = 1.2; // rad/s for Q/E
 const INFINITE_TURNS = 999; // Jenga-off has no throw limit
 const QUALITIES = ['low', 'medium', 'high'] as const;
 type Quality = (typeof QUALITIES)[number];
-const QUALITY_SETTINGS: Record<Quality, { pixelRatio: number; shadowMap: number }> = {
-  low: { pixelRatio: 1, shadowMap: 512 },
-  medium: { pixelRatio: 1.5, shadowMap: 1024 },
-  high: { pixelRatio: 2, shadowMap: 2048 },
+const QUALITY_SETTINGS: Record<Quality, { pixelRatio: number; shadowMap: number; extras: boolean }> = {
+  // extras: rim light and gem sparkles
+  low: { pixelRatio: 1, shadowMap: 512, extras: false },
+  medium: { pixelRatio: 1.5, shadowMap: 1024, extras: true },
+  high: { pixelRatio: 2, shadowMap: 2048, extras: true },
 };
+const SPARKLE_INTERVAL = 0.18; // s between gem glints
 
 const params = {
   gravity: 9.81,
@@ -144,27 +158,18 @@ const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.autoUpdate = false; // re-rendered only while something moves, see frame()
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.toneMapping = THREE.NeutralToneMapping; // keeps the saturated toy colours, unlike ACES/AgX
 
 const scene = new THREE.Scene();
-scene.background = new THREE.Color(0x8ecae6);
-scene.fog = new THREE.Fog(0x8ecae6, 40, 90);
+scene.fog = new THREE.Fog(SKY.horizon, 70, 190);
+scene.add(makeSky(), makeClouds(), makeIsland());
+scene.environment = makeEnvironment(renderer);
+scene.environmentIntensity = 0.6;
 
 const camera = new THREE.PerspectiveCamera(50, 1, 0.1, 200);
 camera.position.set(0, 5, 14);
 
-scene.add(new THREE.HemisphereLight(0xffffff, 0x88aa77, 1.1));
-const sun = new THREE.DirectionalLight(0xffffff, 2.2);
-sun.position.set(8, 16, 6);
-sun.castShadow = true; // the one shadow light
-Object.assign(sun.shadow.camera, { left: -12, right: 12, top: 12, bottom: -12, near: 1, far: 50 });
-scene.add(sun);
-
-const ground = new THREE.Mesh(
-  new THREE.CircleGeometry(60, 48).rotateX(-Math.PI / 2),
-  new THREE.MeshStandardMaterial({ color: 0x7bc47f, roughness: 1 }),
-);
-ground.receiveShadow = true;
-scene.add(ground);
+const { sun, rim } = addLights(scene); // sun is the one shadow light
 
 const controls = new OrbitControls(camera, canvas);
 controls.target.set(0, 2.5, 0);
@@ -195,6 +200,7 @@ function applyQuality() {
   sun.shadow.mapSize.set(q.shadowMap, q.shadowMap);
   sun.shadow.map?.dispose();
   sun.shadow.map = null; // reallocated at the new size on the next shadow render
+  rim.visible = q.extras;
   renderer.setSize(innerWidth, innerHeight, false);
   renderer.shadowMap.needsUpdate = true;
 }
@@ -217,7 +223,15 @@ world.timestep = STEP;
 world.integrationParameters.numSolverIterations = params.solverIterations;
 const events = new RAPIER.EventQueue(true);
 
-world.createCollider(RAPIER.ColliderDesc.cuboid(60, 0.5, 60).setTranslation(0, -0.5, 0).setFriction(0.9));
+// the island top; anything knocked past its edge drops to a catch floor out of sight, where it can sleep
+world.createCollider(
+  RAPIER.ColliderDesc.cylinder(0.5, ISLAND_RADIUS).setTranslation(0, -0.5, 0).setFriction(0.9),
+);
+world.createCollider(
+  RAPIER.ColliderDesc.cuboid(200, 0.5, 200)
+    .setTranslation(0, CATCH_FLOOR_Y - 0.5, 0)
+    .setFriction(0.9),
+);
 
 const blocks: BlockEntity[] = [];
 const balls: BallEntity[] = [];
@@ -225,12 +239,42 @@ const colliderOwner = new Map<number, BlockEntity | BallEntity>();
 const blockMeshes: THREE.InstancedMesh[] = [];
 let platformCollider: RAPIER.Collider | null = null;
 let platformMesh: THREE.Mesh | null = null;
+let platformShadow: THREE.Mesh | null = null;
 const zoneMeshes: THREE.Mesh[] = [];
 const particles = new Particles(scene);
 const shake = new Shake();
 
-const boxGeo = new THREE.BoxGeometry(1, 1, 1);
+const boxGeo = new RoundedBoxGeometry(1, 1, 1, 2, 0.07); // bevelled like a wooden toy block
 const hiddenMatrix = new THREE.Matrix4().makeScale(0, 0, 0);
+const platformMat = new THREE.MeshStandardMaterial({
+  color: 0xc8a27a,
+  roughness: 0.8,
+  map: blockTexture('wood', false),
+});
+
+const blockMats = new Map<BlockType, THREE.MeshStandardMaterial>();
+
+/** Shared material per block type: painted face texture plus a finish that suits the material. */
+function blockMaterial(type: BlockType) {
+  const hit = blockMats.get(type);
+  if (hit) return hit;
+  const finish: Partial<Record<BlockType, THREE.MeshStandardMaterialParameters>> = {
+    steel: { metalness: 0.25, roughness: 0.45 },
+    point: { metalness: 0.55, roughness: 0.3 },
+    gem: { metalness: 0.1, roughness: 0.15, emissive: BLOCKS.gem.color, emissiveIntensity: 0.18 },
+    ice: { roughness: 0.12, emissive: BLOCKS.ice.color, emissiveIntensity: 0.1 },
+    wood: { roughness: 0.8 },
+    immobile: { roughness: 0.95 },
+  };
+  const mat = new THREE.MeshStandardMaterial({
+    color: BLOCKS[type].color,
+    map: blockTexture(type),
+    roughness: 0.6,
+    ...finish[type],
+  });
+  blockMats.set(type, mat);
+  return mat;
+}
 
 function makeEntityBase(body: RAPIER.RigidBody, collider: RAPIER.Collider): Entity {
   const t = body.translation();
@@ -406,6 +450,10 @@ function clearLevel() {
     scene.remove(platformMesh);
     platformMesh.geometry.dispose();
   }
+  if (platformShadow) {
+    scene.remove(platformShadow);
+    disposeMesh(platformShadow);
+  }
   for (const z of zoneMeshes) {
     scene.remove(z);
     disposeMesh(z);
@@ -435,14 +483,12 @@ function loadLevel(index: number) {
       .setTranslation(0, top / 2, 0)
       .setFriction(0.9),
   );
-  platformMesh = new THREE.Mesh(
-    new THREE.BoxGeometry(sx, top, sz),
-    new THREE.MeshStandardMaterial({ color: 0xb08968, roughness: 0.9 }),
-  );
+  platformMesh = new THREE.Mesh(new RoundedBoxGeometry(sx, top, sz, 3, 0.12), platformMat);
   platformMesh.position.set(0, top / 2, 0);
   platformMesh.receiveShadow = true;
   platformMesh.castShadow = true;
-  scene.add(platformMesh);
+  platformShadow = makeContactShadow(sx, sz);
+  scene.add(platformMesh, platformShadow);
   zoneMeshes.length = 0;
   for (const zone of level.zones) {
     const mesh = makeZoneMesh(zone);
@@ -456,17 +502,7 @@ function loadLevel(index: number) {
   const meshByType = new Map<BlockType, THREE.InstancedMesh>();
   const nextInstance = new Map<BlockType, number>();
   for (const [type, count] of counts) {
-    const def = BLOCKS[type];
-    const mesh = new THREE.InstancedMesh(
-      boxGeo,
-      new THREE.MeshStandardMaterial({
-        color: def.color,
-        map: markTexture(type), // shape marking, so types differ by more than colour
-        roughness: type === 'gem' ? 0.25 : 0.6,
-        metalness: type === 'gem' ? 0.3 : 0,
-      }),
-      count,
-    );
+    const mesh = new THREE.InstancedMesh(boxGeo, blockMaterial(type), count);
     mesh.castShadow = true;
     mesh.receiveShadow = true;
     mesh.frustumCulled = false;
@@ -1437,6 +1473,27 @@ function updateAimPreview(now: number) {
   pos.needsUpdate = true;
 }
 
+// ---------- gem glints ----------
+const sparklePos = new THREE.Vector3();
+let sparkleClock = 0;
+
+/** Now and then a white glint floats off a random gem, so gems read as precious at a glance. */
+function sparkleGems(dt: number) {
+  if (!QUALITY_SETTINGS[quality].extras) return;
+  sparkleClock += dt;
+  if (sparkleClock < SPARKLE_INTERVAL) return;
+  sparkleClock = 0;
+  const gems = blocks.filter((b) => b.type === 'gem' && b.status !== 'removed');
+  if (gems.length === 0) return;
+  const gem = gems[Math.floor(Math.random() * gems.length)];
+  sparklePos
+    .set(Math.random() - 0.5, Math.random() - 0.5, Math.random() - 0.5)
+    .multiply(gem.size)
+    .multiplyScalar(1.1)
+    .add(gem.currPos);
+  particles.burst(sparklePos, 0xffffff, 1, 0.4, 0);
+}
+
 // ---------- debug panel ----------
 const gui = new GUI({ title: 'Debug' });
 gui.add(params, 'gravity', 1, 30).onChange((g: number) => (world.gravity = { x: 0, y: -g, z: 0 }));
@@ -1497,6 +1554,7 @@ function frame(now: number) {
     if (beamLeft <= 0 && !spraying) beam.visible = false;
   }
   updateAimPreview(now);
+  sparkleGems(dt);
   particles.update(dt, params.gravity);
   shake.update(dt);
   camera.position.add(shake.offset); // shake only the rendered frame, not the orbit state

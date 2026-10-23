@@ -10,7 +10,8 @@
     "preview": "vite preview",
     "test": "vitest run",
     "lint": "biome check .",
-    "lint:fix": "biome check --write ."
+    "lint:fix": "biome check --write .",
+    "shots": "node scripts/shots.mjs"
   },
   "dependencies": {
     "@dimforge/rapier3d-compat": "^0.21.0",
@@ -21,6 +22,7 @@
   "devDependencies": {
     "@biomejs/biome": "2.6.2",
     "@types/three": "^0.186.0",
+    "playwright-core": "^1.64.1",
     "typescript": "^7.0.2",
     "vite": "^7.3.7",
     "vitest": "^3.2.7"

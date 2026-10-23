@@ -2,6 +2,7 @@
 
 Browser physics puzzle game inspired by Boom Blox (Wii, 2008): throw, grab and blast blocks to solve short puzzles.
 Full research, game design and phased plan: see `PLAN.md`. Work through it phase by phase; tick checkboxes in `PLAN.md` as tasks land.
+Look/sound/feel pass (art, characters, music, name, logo, launch page): see `ART_PLAN.md`.
 
 ## Stack (decided)
 

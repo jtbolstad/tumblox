@@ -237,7 +237,7 @@ flowchart TD
 - [ ] Last 2 Adventure worlds
 - [x] Performance: instancing, body caps (300 blocks per level), sleep-based physics pause, shadow re-render only while moving, low/medium/high quality
 - [x] PWA (offline, installable), keyboard / one-button throw, colour-blind-safe block markings
-- [ ] Final name, logo, original art and music; launch page
+- [ ] Final name, logo, original art and music; launch page — see `ART_PLAN.md`
 
 ## Risks, IP and open questions
 

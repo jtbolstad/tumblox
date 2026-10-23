@@ -39,6 +39,7 @@ export class Particles {
   private readonly colors: Float32Array;
   private readonly velocity: Float32Array;
   private readonly life: Float32Array;
+  private readonly gravityScale: Float32Array;
   private readonly points: THREE.Points;
   private next = 0;
 
@@ -48,6 +49,7 @@ export class Particles {
     this.colors = new Float32Array(max * 3);
     this.velocity = new Float32Array(max * 3);
     this.life = new Float32Array(max);
+    this.gravityScale = new Float32Array(max);
     const geo = new THREE.BufferGeometry();
     geo.setAttribute('position', new THREE.BufferAttribute(this.positions, 3));
     geo.setAttribute('color', new THREE.BufferAttribute(this.colors, 3));
@@ -59,7 +61,8 @@ export class Particles {
     scene.add(this.points);
   }
 
-  burst(at: THREE.Vector3, color: number, count: number, speed = 6) {
+  /** `gravityScale` 0 makes particles drift (glints), 1 makes them fall (debris). */
+  burst(at: THREE.Vector3, color: number, count: number, speed = 6, gravityScale = 1) {
     const c = new THREE.Color(color);
     for (let n = 0; n < count; n++) {
       const i = this.next;
@@ -74,6 +77,7 @@ export class Particles {
       );
       this.colors.set([c.r, c.g, c.b], i * 3);
       this.life[i] = 0.5 + Math.random() * 0.5;
+      this.gravityScale[i] = gravityScale;
     }
   }
 
@@ -85,7 +89,7 @@ export class Particles {
         this.positions[i * 3 + 1] = -999; // park dead particles far below the scene
         continue;
       }
-      this.velocity[i * 3 + 1] -= gravity * dt;
+      this.velocity[i * 3 + 1] -= gravity * this.gravityScale[i] * dt;
       for (let k = 0; k < 3; k++) this.positions[i * 3 + k] += this.velocity[i * 3 + k] * dt;
     }
     (this.points.geometry.getAttribute('position') as THREE.BufferAttribute).needsUpdate = true;
