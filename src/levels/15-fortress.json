@@ -65,5 +65,12 @@
       "type": "steel",
       "pos": [1, 2.5, 0]
     }
+  ],
+  "characters": [
+    {
+      "kind": "pig",
+      "pos": [0, 3, 0],
+      "role": "rival"
+    }
   ]
 }

@@ -73,5 +73,19 @@
       "type": "gem",
       "pos": [0, 4.5, 0]
     }
+  ],
+  "characters": [
+    {
+      "kind": "goat",
+      "pos": [2.3, 0, 1.6],
+      "role": "decor",
+      "rot": -0.5
+    },
+    {
+      "kind": "hen",
+      "pos": [-2.3, 0, 1.6],
+      "role": "friend",
+      "rot": 0.5
+    }
   ]
 }

@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { BLOCK_IDS } from './blocks';
+import { CHARACTER_IDS, ROLES } from './characters';
 import { THEME_IDS } from './themes';
 import { TOOL_IDS } from './tools';
 
@@ -54,6 +55,20 @@ export const levelSchema = z.object({
     )
     .min(1)
     .max(300), // cap so a shared or hand-made level cannot freeze a phone
+  /** cube animals on the level (see src/characters.ts) */
+  characters: z
+    .array(
+      z.object({
+        kind: z.enum(CHARACTER_IDS),
+        /** where its feet stand, relative to the platform top (y = 0 stands on the platform) */
+        pos: vec3,
+        role: z.enum(ROLES).default('decor'),
+        /** turn around the vertical axis, radians; 0 faces the camera */
+        rot: z.number().default(0),
+      }),
+    )
+    .max(6)
+    .default([]),
 });
 
 export type Level = z.infer<typeof levelSchema>;

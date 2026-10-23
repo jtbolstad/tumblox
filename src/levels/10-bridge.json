@@ -42,5 +42,13 @@
       "type": "bomb",
       "pos": [0, 2.5, 0]
     }
+  ],
+  "characters": [
+    {
+      "kind": "frog",
+      "pos": [1.4, 0, 1.4],
+      "role": "friend",
+      "rot": -0.5
+    }
   ]
 }

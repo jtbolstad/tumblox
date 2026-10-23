@@ -4,6 +4,7 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
 import {
+  areVoicesOn,
   type ImpactKind,
   isMuted,
   playBoom,
@@ -13,10 +14,13 @@ import {
   playResult,
   playScore,
   playVanish,
+  playVoice,
   setMuted,
+  setVoicesOn,
   unlockAudio,
 } from './audio';
 import { BLOCKS, type BlockType } from './blocks';
+import { CHARACTERS, type CharacterKind, CharacterRig, type Mood, moodFor, type Role } from './characters';
 import { Debris, disposeMesh, makeZoneMesh, Particles, Puffs, Shake, Shockwaves } from './fx';
 import { type Level, loadBundledLevels } from './level';
 import { blockTexture } from './marks';
@@ -38,11 +42,15 @@ import {
   type BlockStatus,
   blockScore,
   CHAIN_WINDOW,
+  type CharacterState,
   chainBonus,
+  characterScore,
   finalScore,
+  friendLost,
   isSettled,
   medalFor,
   outcome,
+  RIVAL_POINTS,
   zoneMultiplier,
 } from './rules';
 import {
@@ -103,6 +111,9 @@ const SQUASH_SECONDS = 0.18;
 const TRAIL_SPEED = 6; // m/s above which balls leave a trail
 const SLOWMO_PUSH = 0.18; // share of the camera distance the view pushes in during slow-mo
 const INTRO_SECONDS = 2;
+const GET_UP_DELAY = 1.2; // s lying still on its side before a character gets up
+const GET_UP_SECONDS = 0.35; // how long the turn back upright takes, mid-hop
+const GET_UP_HOP = 2.6; // m/s upward
 const MAX_ZOOM_OUT = 35; // m
 const WIN_ORBIT_SPEED = 0.15; // rad/s while the result screen is up
 
@@ -161,6 +172,19 @@ interface BallEntity extends Entity {
 }
 
 type Blaster = BlockEntity | BallEntity;
+
+interface CharacterEntity extends Entity {
+  kind: CharacterKind;
+  role: Role;
+  status: 'alive' | 'fallen';
+  rig: CharacterRig;
+  mood: Mood;
+  lastVoice: number; // performance.now() of its last line, to keep chatter down
+  tiltedFor: number; // s spent lying on its side at rest; it hops back up after a moment
+}
+
+/** Anything a collider can belong to. */
+type Owner = Blaster | CharacterEntity;
 
 /** title: the knock-down logo scene, free throws and no goal. */
 type Phase = 'title' | 'menu' | 'playing' | 'won' | 'lost';
@@ -290,7 +314,8 @@ world.createCollider(
 
 const blocks: BlockEntity[] = [];
 const balls: BallEntity[] = [];
-const colliderOwner = new Map<number, BlockEntity | BallEntity>();
+const colliderOwner = new Map<number, Owner>();
+const chars: CharacterEntity[] = [];
 const blockMeshes: THREE.InstancedMesh[] = [];
 let platformCollider: RAPIER.Collider | null = null;
 let platformMesh: THREE.Mesh | null = null;
@@ -406,9 +431,13 @@ function throwsLeft() {
   return Math.max(0, Math.ceil(totalThrows() - throwsUsed - 1e-6));
 }
 
-/** Points so far: fallen blocks plus chain bonus. */
+function charStates(): CharacterState[] {
+  return chars.map((c) => ({ role: c.role, status: c.status }));
+}
+
+/** Points so far: fallen blocks, knocked-off rivals and chain bonus. */
 function currentScore() {
-  return blockScore(blockStates()) + bonus;
+  return blockScore(blockStates()) + characterScore(charStates()) + bonus;
 }
 
 let lastStats = '';
@@ -524,6 +553,11 @@ function clearLevel() {
   blockMeshes.length = 0;
   for (const b of balls) removeBallBody(b);
   balls.length = 0;
+  for (const c of chars) {
+    world.removeRigidBody(c.body);
+    scene.remove(c.rig.root);
+  }
+  chars.length = 0;
   colliderOwner.clear();
   pendingBlasts.length = 0;
   pendingLaunches.length = 0;
@@ -642,6 +676,8 @@ function loadLevel(index: number) {
     colliderOwner.set(collider.handle, entity);
   }
 
+  for (const spec of level.characters) spawnCharacter(spec, top);
+
   frameCamera();
   startIntro();
   syncRender(1);
@@ -650,6 +686,60 @@ function loadLevel(index: number) {
   if (index !== TITLE_INDEX) ui.hideTitle();
   refreshParty();
   renderer.shadowMap.needsUpdate = true;
+}
+
+const charUp = new THREE.Vector3();
+const getUpAxis = new THREE.Vector3();
+
+/** A character left lying on its side hops and turns back onto its feet. */
+function getUpIfFallenOver(c: CharacterEntity) {
+  charUp.set(0, 1, 0).applyQuaternion(c.currRot);
+  const w = c.body.angvel();
+  const resting = speedOf(c.body) < 0.3 && Math.hypot(w.x, w.y, w.z) < 0.5;
+  c.tiltedFor = charUp.y < 0.8 && resting ? c.tiltedFor + STEP : 0;
+  if (c.tiltedFor < GET_UP_DELAY) return;
+  c.tiltedFor = 0;
+  const angle = Math.acos(THREE.MathUtils.clamp(charUp.y, -1, 1));
+  getUpAxis.crossVectors(charUp, THREE.Object3D.DEFAULT_UP);
+  if (getUpAxis.lengthSq() < 1e-6) getUpAxis.set(1, 0, 0); // upside down: any horizontal axis will do
+  getUpAxis.normalize().multiplyScalar(angle / GET_UP_SECONDS);
+  c.body.setLinvel({ x: 0, y: GET_UP_HOP, z: 0 }, true);
+  c.body.setAngvel(getUpAxis, true);
+}
+
+function spawnCharacter(spec: Level['characters'][number], top: number) {
+  const def = CHARACTERS[spec.kind];
+  const [w, h, d] = def.size;
+  const [x, y, z] = spec.pos;
+  const body = world.createRigidBody(
+    RAPIER.RigidBodyDesc.dynamic()
+      .setTranslation(x, y + top + h / 2, z)
+      .setRotation({ x: 0, y: Math.sin(spec.rot / 2), z: 0, w: Math.cos(spec.rot / 2) })
+      .setAngularDamping(0.3),
+  );
+  const collider = world.createCollider(
+    RAPIER.ColliderDesc.cuboid(w / 2, h / 2, d / 2)
+      .setDensity(def.density)
+      .setFriction(0.8)
+      .setRestitution(0.05)
+      .setActiveEvents(RAPIER.ActiveEvents.COLLISION_EVENTS),
+    body,
+  );
+  body.sleep(); // like blocks, characters wait asleep until something hits them
+  const rig = new CharacterRig(spec.kind);
+  scene.add(rig.root);
+  const entity: CharacterEntity = {
+    ...makeEntityBase(body, collider),
+    kind: spec.kind,
+    role: spec.role,
+    status: 'alive',
+    rig,
+    mood: 'idle',
+    lastVoice: -1e9,
+    tiltedFor: 0,
+  };
+  chars.push(entity);
+  colliderOwner.set(collider.handle, entity);
 }
 
 function frameCamera() {
@@ -847,7 +937,7 @@ function detonate(source: Blaster) {
     if (i >= 0) balls.splice(i, 1);
     removeBallBody(source);
   }
-  const targets: Blaster[] = [...blocks, ...balls];
+  const targets: Owner[] = [...blocks, ...balls, ...chars];
   for (const t of targets) {
     if (t === source || ('status' in t && t.status === 'removed')) continue;
     if ('type' in t && !BLOCKS[t.type].mobile) continue;
@@ -880,7 +970,7 @@ const IMPACT_BY_TYPE: Partial<Record<BlockType, ImpactKind>> = {
   ice: 'glass',
 };
 
-function impactKind(a: Blaster | undefined, b: Blaster | undefined): ImpactKind {
+function impactKind(a: Owner | undefined, b: Owner | undefined): ImpactKind {
   for (const e of [a, b])
     if (e && 'type' in e && IMPACT_BY_TYPE[e.type]) return IMPACT_BY_TYPE[e.type] as ImpactKind;
   return 'thud';
@@ -890,8 +980,8 @@ function impactKind(a: Blaster | undefined, b: Blaster | undefined): ImpactKind 
 function triggerBlock(
   e: BlockEntity,
   speed: number,
-  a: Blaster | undefined,
-  b: Blaster | undefined,
+  a: Owner | undefined,
+  b: Owner | undefined,
   toVanish: Set<BlockEntity>,
 ) {
   const def = BLOCKS[e.type];
@@ -938,7 +1028,7 @@ function vanishAll(toVanish: Set<BlockEntity>) {
 let lastDust = 0;
 
 /** Dust where a block lands hard, and a quick squash on blocks a ball smacks into. */
-function impactEffects(a: Blaster | undefined, b: Blaster | undefined, speed: number) {
+function impactEffects(a: Owner | undefined, b: Owner | undefined, speed: number) {
   const ballHit = (a && 'tool' in a) || (b && 'tool' in b);
   for (const e of [a, b]) {
     if (!e || !('type' in e)) continue;
@@ -972,6 +1062,7 @@ function handleImpacts() {
     const speed = Math.max(bodySpeed(h1), bodySpeed(h2));
     if (speed >= 1.5) playImpact(impactKind(a, b), speed);
     if (speed >= DUST_SPEED) impactEffects(a, b, speed);
+    for (const e of [a, b]) if (e && 'rig' in e && speed >= 3) say(e, 'ouch');
     const blocksHit = [a, b].filter(
       (e): e is BlockEntity => !!e && 'type' in e && !!BLOCKS[e.type].behaviour,
     );
@@ -1063,8 +1154,8 @@ function applyHose() {
   if (Math.random() < 0.5) particles.burst(sprayHit, TOOLS.hose.color, 1, 2);
   const direct = colliderOwner.get(hit.collider.handle);
   const reach = HOSE_SPLASH + 0.6;
-  for (const e of blocks) {
-    if (e.status === 'removed' || !BLOCKS[e.type].mobile) continue;
+  for (const e of [...blocks, ...chars]) {
+    if ('type' in e && (e.status === 'removed' || !BLOCKS[e.type].mobile)) continue;
     const d = e.currPos.distanceTo(sprayHit);
     if (d > reach && e !== direct) continue;
     const falloff = 1 - 0.6 * Math.min(d / reach, 1);
@@ -1078,6 +1169,7 @@ function applyHose() {
 function worldAsleep() {
   if (pendingBlasts.length > 0 || pendingLaunches.length > 0 || grab.entity || spraying) return false;
   for (const b of balls) if (!b.body.isSleeping()) return false;
+  for (const c of chars) if (!c.body.isSleeping()) return false;
   for (const e of blocks) {
     if (e.status !== 'removed' && BLOCKS[e.type].mobile && !e.body.isSleeping()) return false;
   }
@@ -1114,6 +1206,10 @@ function syncRender(alpha: number) {
     e.mesh.setMatrixAt(e.instance, tmpMat);
   }
   for (const m of blockMeshes) m.instanceMatrix.needsUpdate = true;
+  for (const c of chars) {
+    c.rig.root.position.lerpVectors(c.prevPos, c.currPos, alpha);
+    c.rig.root.quaternion.slerpQuaternions(c.prevRot, c.currRot, alpha);
+  }
   for (const e of balls) {
     e.mesh.position.lerpVectors(e.prevPos, e.currPos, alpha);
     e.mesh.quaternion.slerpQuaternions(e.prevRot, e.currRot, alpha);
@@ -1128,22 +1224,36 @@ function speedOf(body: RAPIER.RigidBody) {
 const popupPos = new THREE.Vector3();
 
 /** Floating "+100" / "-100" where a scoring block fell, so the player sees what counted. */
+/** Floating text above a world position (skipped when it is behind the camera). */
+function popupAt(at: THREE.Vector3, text: string, negative: boolean, color?: string) {
+  popupPos.copy(at);
+  popupPos.y = Math.max(popupPos.y, level.platform.top) + 0.8; // above it, not under the ground
+  popupPos.project(camera);
+  if (popupPos.z > 1) return;
+  ui.popup(text, ((popupPos.x + 1) / 2) * innerWidth, ((1 - popupPos.y) / 2) * innerHeight, negative, color);
+}
+
 function popupFor(e: BlockEntity) {
   const points = BLOCKS[e.type].points;
   if (points === 0) return;
-  popupPos.copy(e.currPos);
-  popupPos.y = Math.max(popupPos.y, level.platform.top) + 0.8; // above the block, not under the ground
-  popupPos.project(camera);
-  if (popupPos.z > 1) return; // behind the camera
   particles.burst(e.currPos, BLOCKS[e.type].color, 10, 4);
   playScore();
-  ui.popup(
+  popupAt(
+    e.currPos,
     `${points > 0 ? '+' : ''}${points}`,
-    ((popupPos.x + 1) / 2) * innerWidth,
-    ((1 - popupPos.y) / 2) * innerHeight,
     points < 0,
     `#${BLOCKS[e.type].color.toString(16).padStart(6, '0')}`,
   );
+}
+
+/** A character went over the edge: points for a rival, a warning for a friend. */
+function characterFell(c: CharacterEntity) {
+  if (c.role === 'rival') {
+    playScore(true);
+    popupAt(c.currPos, `+${RIVAL_POINTS}`, false, '#e63946');
+  } else if (c.role === 'friend') {
+    popupAt(c.currPos, 'Oh no!', true);
+  }
 }
 
 function stepPhysics() {
@@ -1215,6 +1325,18 @@ function stepPhysics() {
       allAsleep = false;
     }
   }
+  for (const c of chars) {
+    capture(c);
+    getUpIfFallenOver(c);
+    if (c.status === 'alive' && c.currPos.y < fallY) {
+      c.status = 'fallen';
+      characterFell(c);
+    }
+    if (!c.body.isSleeping()) {
+      allAsleep = false;
+      if (speedOf(c.body) > 0.1) moving = true;
+    }
+  }
   if (moving) lastMotion = simTime;
 
   refreshStats();
@@ -1231,11 +1353,12 @@ function stepPhysics() {
 
 function finishIfDone() {
   const states = blockStates();
-  const result = outcome(level.goal, states, throwsLeft(), collapsed);
+  const friendDown = friendLost(charStates());
+  const result = outcome(level.goal, states, throwsLeft(), collapsed, friendDown);
   if (result === 'playing') return;
   phase = result;
   if (result === 'won') {
-    const score = finalScore(states, throwsLeft(), bonus);
+    const score = finalScore(states, throwsLeft(), bonus + characterScore(charStates()));
     const medal = medalFor(score, level.medals);
     const saved = recordResult(level.id, score, medal);
     playResult(true);
@@ -1248,7 +1371,7 @@ function finishIfDone() {
       medal: null,
       best: 0,
       hasNext: false,
-      lostReason: collapsed ? 'The tower fell!' : undefined,
+      lostReason: friendDown ? 'A friend fell off!' : collapsed ? 'The tower fell!' : undefined,
     });
   }
 }
@@ -1369,6 +1492,18 @@ showMute();
 muteBtn.addEventListener('click', () => {
   setMuted(!isMuted());
   showMute();
+  unlockAudio();
+});
+
+const voiceBtn = document.getElementById('voice-btn') as HTMLElement;
+function showVoices() {
+  voiceBtn.style.opacity = areVoicesOn() ? '1' : '0.5';
+  voiceBtn.setAttribute('aria-pressed', String(areVoicesOn()));
+}
+showVoices();
+voiceBtn.addEventListener('click', () => {
+  setVoicesOn(!areVoicesOn());
+  showVoices();
   unlockAudio();
 });
 
@@ -1697,6 +1832,68 @@ function updateAimPreview(now: number) {
   pos.needsUpdate = true;
 }
 
+// ---------- characters: moods, looking around, voices ----------
+const CHAR_VOICE_GAP = 1200; // ms between lines from one character
+const ANY_VOICE_GAP = 250; // ms between lines from anyone, so a crowd does not babble
+const BALL_NOTICE_DISTANCE = 5; // m
+const SHAKE_DISTANCE = 2.2; // m: moving blocks this close make a character panic
+let lastAnyVoice = 0;
+const lookTarget = new THREE.Vector3();
+const toChar = new THREE.Vector3();
+const ballVel = new THREE.Vector3();
+
+function say(c: CharacterEntity, line: Parameters<typeof playVoice>[0]) {
+  const now = performance.now();
+  if (now - c.lastVoice < CHAR_VOICE_GAP || now - lastAnyVoice < ANY_VOICE_GAP) return;
+  c.lastVoice = lastAnyVoice = now;
+  playVoice(line, CHARACTERS[c.kind].voice);
+}
+
+/** The fast ball heading for this character, if any. */
+function incomingBall(c: CharacterEntity): BallEntity | null {
+  for (const b of balls) {
+    const v = b.body.linvel();
+    ballVel.set(v.x, v.y, v.z);
+    if (ballVel.lengthSq() < 9) continue;
+    toChar.copy(c.currPos).sub(b.currPos);
+    if (toChar.length() < BALL_NOTICE_DISTANCE && toChar.dot(ballVel) > 0) return b;
+  }
+  return null;
+}
+
+function nearbyBlocksMoving(c: CharacterEntity): boolean {
+  if (physicsIdle) return false;
+  for (const e of blocks) {
+    if (e.status === 'removed' || e.body.isSleeping()) continue;
+    if (e.currPos.distanceTo(c.currPos) < SHAKE_DISTANCE && speedOf(e.body) > 0.6) return true;
+  }
+  return false;
+}
+
+function updateCharacters(dt: number) {
+  const result = phase === 'won' ? 'won' : phase === 'lost' ? 'lost' : null;
+  for (const c of chars) {
+    const w = c.body.angvel();
+    const ball = incomingBall(c);
+    const mood = moodFor({
+      result,
+      role: c.role,
+      speed: speedOf(c.body),
+      spin: Math.hypot(w.x, w.y, w.z),
+      ballNear: ball !== null,
+      shaking: nearbyBlocksMoving(c),
+    });
+    if (mood !== c.mood) {
+      c.mood = c.rig.mood = mood;
+      if (mood !== 'idle') say(c, mood);
+    }
+    // watch an incoming ball; otherwise look at the player (the camera)
+    lookTarget.copy(ball ? ball.mesh.position : camera.position);
+    c.rig.root.updateMatrixWorld();
+    c.rig.update(dt, c.rig.root.worldToLocal(lookTarget));
+  }
+}
+
 // ---------- gem glints ----------
 const sparklePos = new THREE.Vector3();
 let sparkleClock = 0;
@@ -1813,6 +2010,7 @@ function tick(now: number) {
   }
   updateAimPreview(now);
   sparkleGems(dt);
+  updateCharacters(dt);
   updateTrails();
   particles.update(fxDt, params.gravity);
   debris.update(fxDt, params.gravity);
@@ -1834,6 +2032,7 @@ requestAnimationFrame(frame);
   levels,
   blocks,
   balls,
+  chars,
   loadLevel: (i: number) => {
     startSolo(i);
     skipIntro();

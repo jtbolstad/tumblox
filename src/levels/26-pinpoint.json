@@ -58,5 +58,12 @@
       "type": "point",
       "pos": [0, 2.5, 0]
     }
+  ],
+  "characters": [
+    {
+      "kind": "bat",
+      "pos": [-2, 2, 0],
+      "role": "rival"
+    }
   ]
 }

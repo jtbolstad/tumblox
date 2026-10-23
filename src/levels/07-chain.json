@@ -61,5 +61,12 @@
       "type": "gem",
       "pos": [2.25, 2.5, 0]
     }
+  ],
+  "characters": [
+    {
+      "kind": "parrot",
+      "pos": [2.25, 3, 0],
+      "role": "rival"
+    }
   ]
 }

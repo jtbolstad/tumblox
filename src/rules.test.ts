@@ -7,7 +7,9 @@ import {
   betterMedal,
   blockScore,
   chainBonus,
+  characterScore,
   finalScore,
+  friendLost,
   goalMet,
   isSettled,
   medalFor,
@@ -156,5 +158,22 @@ describe('chain bonus', () => {
 
   it('adds to the final score', () => {
     expect(finalScore([b('gem', 'fallen')], 0, 75)).toBe(175);
+  });
+});
+
+describe('characters', () => {
+  const rival = { role: 'rival', status: 'fallen' } as const;
+  const friend = { role: 'friend', status: 'alive' } as const;
+
+  it('scores fallen rivals only', () => {
+    expect(
+      characterScore([rival, { role: 'rival', status: 'alive' }, { role: 'decor', status: 'fallen' }]),
+    ).toBe(150);
+  });
+
+  it('loses the level when a friend falls, even with the goal met', () => {
+    expect(friendLost([friend, rival])).toBe(false);
+    expect(friendLost([{ role: 'friend', status: 'fallen' }])).toBe(true);
+    expect(outcome({ type: 'clearBoard' }, [], 2, false, true)).toBe('lost');
   });
 });

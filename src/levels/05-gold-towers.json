@@ -62,5 +62,12 @@
       "type": "point",
       "pos": [2, 3.5, 0]
     }
+  ],
+  "characters": [
+    {
+      "kind": "hen",
+      "pos": [0, 0, -2],
+      "role": "friend"
+    }
   ]
 }

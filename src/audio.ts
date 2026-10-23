@@ -168,3 +168,87 @@ export function playLaser() {
   tone(c, 1800, 300, 0.14, 0.2, 'sawtooth');
   tone(c, 900, 150, 0.1, 0.12, 'square');
 }
+
+// ---------- character voices: soft formant blips, not words ----------
+export type VoiceLine = 'alert' | 'panic' | 'tumble' | 'cheer' | 'sad' | 'ouch';
+
+const VOICE_KEY = 'blox.voices.v1';
+let voicesOn = readVoicesOn();
+
+function readVoicesOn(): boolean {
+  try {
+    return localStorage.getItem(VOICE_KEY) !== '0';
+  } catch {
+    return true;
+  }
+}
+
+export function areVoicesOn() {
+  return voicesOn;
+}
+
+export function setVoicesOn(value: boolean) {
+  voicesOn = value;
+  try {
+    localStorage.setItem(VOICE_KEY, value ? '1' : '0');
+  } catch {
+    // ignore: the choice just is not remembered
+  }
+}
+
+/** [first formant, second formant] in Hz: the vowel each line is "said" on. */
+const VOWELS = { o: [500, 900], i: [300, 2300], a: [750, 1200], e: [450, 1900], u: [350, 800] } as const;
+
+/** Each line: syllables of [start s, length s, pitch from, pitch to] on one vowel. */
+const LINES: Record<
+  VoiceLine,
+  { vowel: keyof typeof VOWELS; syllables: [number, number, number, number][] }
+> = {
+  alert: { vowel: 'o', syllables: [[0, 0.18, 1, 1.4]] },
+  panic: {
+    vowel: 'i',
+    syllables: [
+      [0, 0.08, 1.6, 1.7],
+      [0.12, 0.08, 1.6, 1.8],
+    ],
+  },
+  tumble: { vowel: 'a', syllables: [[0, 0.35, 1.5, 0.8]] },
+  cheer: {
+    vowel: 'e',
+    syllables: [
+      [0, 0.12, 1.1, 1.3],
+      [0.15, 0.18, 1.3, 1.6],
+    ],
+  },
+  sad: { vowel: 'a', syllables: [[0, 0.4, 1, 0.7]] },
+  ouch: { vowel: 'u', syllables: [[0, 0.1, 1.2, 0.8]] },
+};
+
+/** A short creature noise; `pitch` scales the voice (small animals squeak higher). */
+export function playVoice(line: VoiceLine, pitch: number) {
+  const c = out();
+  if (!c || !voicesOn) return;
+  const { vowel, syllables } = LINES[line];
+  const base = 260 * pitch;
+  for (const [start, len, from, to] of syllables) {
+    const at = c.currentTime + start;
+    const osc = c.createOscillator();
+    osc.type = 'sawtooth';
+    osc.frequency.setValueAtTime(base * from, at);
+    osc.frequency.exponentialRampToValueAtTime(base * to, at + len);
+    const g = c.createGain();
+    g.gain.setValueAtTime(0.0001, at);
+    g.gain.exponentialRampToValueAtTime(0.12, at + 0.02);
+    g.gain.exponentialRampToValueAtTime(0.0001, at + len);
+    for (const f of VOWELS[vowel]) {
+      const band = c.createBiquadFilter();
+      band.type = 'bandpass';
+      band.frequency.value = f * Math.sqrt(pitch); // smaller heads, higher formants
+      band.Q.value = 6;
+      osc.connect(band).connect(g);
+    }
+    g.connect(c.destination);
+    osc.start(at);
+    osc.stop(at + len + 0.02);
+  }
+}

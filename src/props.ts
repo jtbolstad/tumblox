@@ -9,7 +9,7 @@ import { THEMES, type ThemeId } from './themes';
  * (flames, the moon), so a world costs two draw calls.
  */
 
-interface Part {
+export interface Part {
   geo: THREE.BufferGeometry;
   glow?: boolean;
 }
@@ -20,7 +20,7 @@ const tmpQuat = new THREE.Quaternion();
 const tmpEuler = new THREE.Euler();
 
 /** A primitive painted one colour, moved into place. Keeps only position, normal and colour so all parts merge. */
-function p(
+export function p(
   geo: THREE.BufferGeometry,
   color: number,
   pos: [number, number, number],
@@ -44,10 +44,10 @@ function p(
   return { geo: g, glow };
 }
 
-const box = (w: number, h: number, d: number) => new THREE.BoxGeometry(w, h, d);
-const cyl = (rt: number, rb: number, h: number, seg = 7) => new THREE.CylinderGeometry(rt, rb, h, seg);
-const ball = (r: number, detail = 0) => new THREE.IcosahedronGeometry(r, detail);
-const cone = (r: number, h: number, seg = 7) => new THREE.ConeGeometry(r, h, seg);
+export const box = (w: number, h: number, d: number) => new THREE.BoxGeometry(w, h, d);
+export const cyl = (rt: number, rb: number, h: number, seg = 7) => new THREE.CylinderGeometry(rt, rb, h, seg);
+export const ball = (r: number, detail = 0) => new THREE.IcosahedronGeometry(r, detail);
+export const cone = (r: number, h: number, seg = 7) => new THREE.ConeGeometry(r, h, seg);
 
 // ---------- props, built around their own origin on the ground ----------
 type Builder = (rand: () => number) => Part[];
@@ -331,7 +331,7 @@ function distantScenery(theme: ThemeId, rand: () => number): Part[] {
   return parts;
 }
 
-function merge(parts: Part[]): THREE.BufferGeometry | null {
+export function merge(parts: Part[]): THREE.BufferGeometry | null {
   if (parts.length === 0) return null;
   const geo = mergeGeometries(parts.map((part) => part.geo));
   for (const part of parts) part.geo.dispose();

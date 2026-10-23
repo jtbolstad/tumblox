@@ -80,7 +80,7 @@
       #title .bottom { display: flex; flex-direction: column; align-items: center; gap: 10px; }
       #title button { pointer-events: auto; font-size: 1.5em; padding: 14px 42px; border-radius: 16px; box-shadow: 0 5px 0 #c96a00; }
       #title .try { font-size: 0.9em; opacity: 0.75; }
-      body.on-title #hud > :not(#mute-btn):not(#music-btn):not(#quality-btn) { display: none; }
+      body.on-title #hud > :not(#mute-btn):not(#music-btn):not(#voice-btn):not(#quality-btn) { display: none; }
       .drop { animation: medal-drop 0.9s cubic-bezier(0.3, 1.6, 0.5, 1) both; }
       @keyframes medal-drop {
         0% { opacity: 0; transform: translateY(-120px) rotate(-30deg) scale(0.6); }
@@ -98,6 +98,7 @@
       <button type="button" id="menu-btn" class="secondary">Levels</button>
       <button type="button" id="mute-btn" class="secondary" aria-label="Toggle sound">🔊</button>
       <button type="button" id="music-btn" class="secondary" aria-label="Toggle music">🎵</button>
+      <button type="button" id="voice-btn" class="secondary" aria-label="Toggle character voices">💬</button>
       <button type="button" id="quality-btn" class="secondary" aria-label="Graphics quality">High</button>
       <span id="level-name"></span>
       <span><span id="throws-label">Throws</span>: <span id="throws">0</span></span>

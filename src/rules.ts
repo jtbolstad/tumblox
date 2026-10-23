@@ -1,4 +1,5 @@
 import { BLOCKS, type BlockType } from './blocks';
+import type { Role } from './characters';
 import type { Goal } from './level';
 
 /** pulled: a block the player dragged clear of a Jenga tower. */
@@ -13,6 +14,23 @@ export interface BlockState {
 }
 
 export const UNUSED_THROW_BONUS = 50;
+/** Points for knocking a rival character off the platform. */
+export const RIVAL_POINTS = 150;
+
+export interface CharacterState {
+  role: Role;
+  status: 'alive' | 'fallen';
+}
+
+/** Points from rivals that have been knocked off. */
+export function characterScore(chars: readonly CharacterState[]): number {
+  return chars.filter((c) => c.role === 'rival' && c.status === 'fallen').length * RIVAL_POINTS;
+}
+
+/** protectFriends: a friend character off the platform loses the level, whatever else happened. */
+export function friendLost(chars: readonly CharacterState[]): boolean {
+  return chars.some((c) => c.role === 'friend' && c.status === 'fallen');
+}
 
 /** Multiplier of the best zone containing floor point (x, z); 1 when outside every zone. */
 export function zoneMultiplier(
@@ -100,7 +118,9 @@ export function outcome(
   blocks: readonly BlockState[],
   throwsLeft: number,
   collapsed = false,
+  friendDown = false,
 ): Outcome {
+  if (friendDown) return 'lost';
   if (goal.type === 'jenga' && collapsed) return 'lost';
   if (goalMet(goal, blocks)) return 'won';
   return throwsLeft <= 0 ? 'lost' : 'playing';

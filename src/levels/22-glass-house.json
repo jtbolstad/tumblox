@@ -65,5 +65,12 @@
       "type": "normal",
       "pos": [1, 1.5, -1]
     }
+  ],
+  "characters": [
+    {
+      "kind": "armadillo",
+      "pos": [-0.5, 2, -0.5],
+      "role": "rival"
+    }
   ]
 }

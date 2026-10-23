@@ -99,17 +99,17 @@ Built in code from boxes (body, head, ears, eyes, snout): original, and no asset
 | Castle Hill  | pig squire            |
 | Dusty Gulch  | armadillo             |
 | Spooky Manor | bat, ghost-sheet blob |
-- [ ] Each character is one dynamic Rapier box body; child meshes carry a procedural animation state machine:
+- [x] Each character is one dynamic Rapier box body; child meshes carry a procedural animation state machine (`src/characters.ts`; knocked-over characters hop back onto their feet):
   - idle: bob, blink, look at the cursor or ball
   - alert: a ball is coming
   - panic: the stack under it wobbles
   - tumble: flailing while airborne
   - cheer / sad: on the result screen
-- [ ] Level schema: optional `characters: [{ kind, pos, role }]`, where role is `friend` (must stay on the platform), `rival` (points for knocking it off) or `decor`
-- [ ] `protectFriends` goal option in `src/rules.ts`, with Vitest tests
-- [ ] Voices: short, soft formant blips, rate-limited, with their own volume slider
-- [ ] Character kinds are data (like `BLOCKS` in `src/blocks.ts`), and the state machine can take new states, leaving room for D2
-- [ ] At most 6 characters per level
+- [x] Level schema: optional `characters: [{ kind, pos, role }]`, where role is `friend` (must stay on the platform), `rival` (points for knocking it off) or `decor`
+- [x] Protect-friends rule in `src/rules.ts` (`friendLost`, rivals worth `RIVAL_POINTS` = 150), with Vitest tests
+- [x] Voices: short, soft formant blips, rate-limited, with their own on/off button (a volume slider comes with stage E's volume settings)
+- [x] Character kinds are data (like `BLOCKS` in `src/blocks.ts`), and the state machine can take new states, leaving room for D2
+- [x] At most 6 characters per level; placed in levels 3, 5, 7, 10, 15, 19, 22, 25 and 26
 
 ### D2. Later: full character behaviours (big scope)
 
