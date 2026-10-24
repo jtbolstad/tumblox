@@ -1,7 +1,6 @@
 import '@fontsource-variable/fredoka';
 import RAPIER from '@dimforge/rapier3d-compat';
 import * as THREE from 'three';
-import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
 import {
   type Channel,
@@ -26,6 +25,7 @@ import {
 } from './audio';
 import { BLOCKS, type BlockType } from './blocks';
 import { levelBrief } from './brief';
+import { createCameraRig } from './camera-runtime';
 import {
   CHARACTERS,
   type CharacterKind,
@@ -149,11 +149,9 @@ const SQUASH_SPEED = 4; // m/s ball hit that squashes the block
 const SQUASH_SECONDS = 0.18;
 const TRAIL_SPEED = 6; // m/s above which balls leave a trail
 const SLOWMO_PUSH = 0.18; // share of the camera distance the view pushes in during slow-mo
-const INTRO_SECONDS = 2;
 const GET_UP_DELAY = 1.2; // s lying still on its side before a character gets up
 const GET_UP_SECONDS = 0.35; // how long the turn back upright takes, mid-hop
 const GET_UP_HOP = 2.6; // m/s upward
-const MAX_ZOOM_OUT = 35; // m
 const WIN_ORBIT_SPEED = 0.15; // rad/s while the result screen is up
 
 const params = {
@@ -250,8 +248,17 @@ const clouds = makeClouds();
 scene.add(sky, clouds);
 scene.environmentIntensity = 0.6;
 
-const camera = new THREE.PerspectiveCamera(50, 1, 0.1, 400); // far enough to keep the sky dome whole when zoomed out
-camera.position.set(0, 5, 14);
+const orbitBtn = document.getElementById('orbit-btn') as HTMLButtonElement;
+const cam = createCameraRig(canvas, orbitBtn);
+const {
+  camera,
+  controls,
+  orbitCamera,
+  frameCamera: frameCameraRaw,
+  skipIntro,
+  updateIntro,
+  isOrbitMode,
+} = cam;
 
 const { sun, rim, hemi } = addLights(scene); // sun is the one shadow light
 
@@ -366,28 +373,6 @@ function applyStageLight(title: boolean) {
   stageSpot.intensity = title ? 4500 : daylight ? 2200 : 4500;
   stageSpot.target.position.set(0, title ? 3.5 : level.platform.top + 2, 0);
 }
-
-const controls = new OrbitControls(camera, canvas);
-controls.target.set(0, 2.5, 0);
-controls.enableDamping = true;
-controls.minDistance = 6;
-controls.maxDistance = MAX_ZOOM_OUT;
-controls.maxPolarAngle = Math.PI / 2 - 0.05;
-// left button / one finger = throw; right button / two fingers = orbit + pinch
-controls.mouseButtons = { LEFT: -1 as THREE.MOUSE, MIDDLE: THREE.MOUSE.DOLLY, RIGHT: THREE.MOUSE.ROTATE };
-controls.touches = { ONE: -1 as THREE.TOUCH, TWO: THREE.TOUCH.DOLLY_ROTATE };
-controls.update();
-
-// a one-finger-orbit mode for phones/tablets, toggled by #orbit-btn: two fingers already
-// orbit+zoom, but reaching a stack to look behind it with just one thumb is awkward otherwise
-const orbitBtn = document.getElementById('orbit-btn') as HTMLButtonElement;
-let orbitMode = false;
-function setOrbitMode(on: boolean) {
-  orbitMode = on;
-  controls.touches.ONE = on ? THREE.TOUCH.ROTATE : (-1 as THREE.TOUCH);
-  orbitBtn.setAttribute('aria-pressed', String(on));
-}
-orbitBtn.addEventListener('click', () => setOrbitMode(!orbitMode));
 
 let quality: Quality = readQuality();
 
@@ -554,9 +539,9 @@ const ui = createUi({
 let menuReturn: { phase: Phase; introLevel: number } | null = null;
 
 function openMenu() {
-  if (phase !== 'menu') menuReturn = { phase, introLevel };
+  if (phase !== 'menu') menuReturn = { phase, introLevel: cam.introLevel };
   phase = 'menu';
-  introLevel = -1; // picking a level from the menu flies in again
+  cam.introLevel = -1; // picking a level from the menu flies in again
   ui.showMenu(levels, loadProgress());
 }
 
@@ -571,7 +556,7 @@ function closeMenu() {
     return;
   }
   phase = back.phase;
-  introLevel = back.introLevel;
+  cam.introLevel = back.introLevel;
   if (phase === 'won' || phase === 'lost') ui.restoreResult();
 }
 
@@ -976,135 +961,18 @@ function spawnCharacter(spec: Level['characters'][number], top: number) {
 
 /** `vary`: a level start picks a random height and distance; resetting the view (Enter) does not. */
 function frameCamera(vary = false) {
-  let maxY = 0;
-  let maxX = 0;
-  for (const b of level.blocks) {
-    maxY = Math.max(maxY, b.pos[1] + b.size[1] / 2);
-    maxX = Math.max(maxX, Math.abs(b.pos[0]) + b.size[0] / 2);
-  }
-  const top = level.platform.top;
-  // far enough to fit the structure's width at this aspect ratio too (wide levels, portrait phones)
-  const halfWidthTan = Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)) * camera.aspect;
-  // the title sign fills the width of the screen, centred on the letters
-  const onTitle = level === titleScene;
-  const fitWidth = onTitle ? (maxX + 2) / halfWidthTan : (maxX + 1) / halfWidthTan + 2;
-  // the wide title may need more room than the usual zoom limit on a portrait phone
-  controls.maxDistance = Math.max(MAX_ZOOM_OUT, fitWidth + 1);
-  const dist = onTitle
-    ? Math.min(fitWidth, controls.maxDistance - 1)
-    : Math.min(Math.max(7 + maxY * 1.1 + maxX * 1.0, 9, fitWidth), controls.maxDistance - 1);
-  controls.target.set(0, top + maxY / 2, 0);
-  const spread = vary && !onTitle ? Math.random() : 0.4;
-  const height = top + maxY * 0.45 + 1.5 + (spread - 0.4) * (3 + maxY * 0.8); // from near ground level to a high view
-  camera.position.set(
-    0,
-    onTitle ? top + maxY / 2 : height,
-    dist * (vary && !onTitle ? 0.9 + Math.random() * 0.25 : 1),
-  ); // the title is seen straight on
-  controls.update();
+  frameCameraRaw(level, level === titleScene, vary);
 }
 
-// ---------- camera moves: intro fly-in, result orbit, slow-mo push-in ----------
-const orbitOffset = new THREE.Vector3();
-const introTo = new THREE.Vector3();
-let introT = 1; // 0..1 progress of the fly-in; 1 = not running
-let introLevel = -1; // the fly-in plays once per level, not on retry or Jenga-off rebuilds
+/** Starts the fly-in for a level that is new (not a retry or a Jenga-off rebuild); shows its banner. */
+function startIntro() {
+  if (!cam.startIntro(levelIndex)) return;
+  if (levelIndex !== TITLE_INDEX) ui.showBanner(levelBrief(level, levelIndex + 1));
+}
+
+// ---------- camera moves: result orbit, slow-mo push-in ----------
 let push = 0;
 const pushOffset = new THREE.Vector3();
-
-/** Turn the camera around the orbit target by `angle` rad and scale its distance by `zoom`. */
-function orbitCamera(angle: number, zoom = 1, tilt = 0) {
-  orbitOffset.copy(camera.position).sub(controls.target);
-  orbitSpherical.setFromVector3(orbitOffset);
-  orbitSpherical.theta += angle;
-  orbitSpherical.phi = THREE.MathUtils.clamp(orbitSpherical.phi + tilt, 0.15, controls.maxPolarAngle);
-  orbitSpherical.radius = THREE.MathUtils.clamp(
-    orbitSpherical.radius * zoom,
-    controls.minDistance,
-    controls.maxDistance,
-  );
-  camera.position.copy(controls.target).add(orbitOffset.setFromSpherical(orbitSpherical));
-}
-
-// ---------- touchpad: two-finger swipe orbits, pinch zooms; a mouse wheel still zooms ----------
-const orbitSpherical = new THREE.Spherical();
-const TOUCHPAD_ORBIT = 0.005; // rad per pixel of swipe
-const PINCH_ZOOM = 0.01; // per unit of pinch delta
-
-/**
- * Touchpads send swipes as smooth pixel deltas, often sideways or fractional; mouse wheels send big even
- * notches straight up or down (or count lines).
- */
-function isTouchpadSwipe(ev: WheelEvent) {
-  return (
-    ev.deltaMode === WheelEvent.DOM_DELTA_PIXEL &&
-    (ev.deltaX !== 0 || !Number.isInteger(ev.deltaY) || Math.abs(ev.deltaY) < 40)
-  );
-}
-
-// listen on window in the capture phase, so OrbitControls' own wheel zoom never sees these events
-addEventListener(
-  'wheel',
-  (ev) => {
-    if (ev.target !== canvas || introT < 1) return;
-    ev.preventDefault();
-    ev.stopPropagation();
-    if (ev.ctrlKey) {
-      orbitCamera(0, Math.exp(ev.deltaY * PINCH_ZOOM)); // a touchpad pinch arrives as ctrl + wheel
-    } else if (isTouchpadSwipe(ev)) {
-      orbitCamera(ev.deltaX * TOUCHPAD_ORBIT, 1, -ev.deltaY * TOUCHPAD_ORBIT);
-    } else {
-      orbitCamera(0, Math.exp(Math.sign(ev.deltaY) * 0.1)); // mouse wheel notch
-    }
-    controls.update();
-  },
-  { capture: true, passive: false },
-);
-
-const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
-
-function startIntro() {
-  if (levelIndex === introLevel) return;
-  introLevel = levelIndex;
-  // a new level (not a retry): say what to do here
-  if (levelIndex !== TITLE_INDEX) ui.showBanner(levelBrief(level, levelIndex + 1));
-  if (reducedMotion) return;
-  introTo.copy(camera.position);
-  // a different swoop each level: either side, any sweep up to a half turn, varied height and distance
-  introSweep = (Math.random() < 0.5 ? -1 : 1) * (0.8 + Math.random() * 1.6);
-  introRise = 3 + Math.random() * 7;
-  introPull = 0.4 + Math.random() * 0.8;
-  introT = 0;
-  controls.enabled = false;
-  updateIntro(0);
-}
-
-let introSweep = 1.4;
-let introRise = 6;
-let introPull = 0.8;
-
-function skipIntro() {
-  if (introT >= 1) return;
-  introT = 1;
-  camera.position.copy(introTo);
-  controls.enabled = true;
-  controls.update();
-}
-
-/** Swoop in from high and to the side, easing out onto the framed pose. */
-function updateIntro(dt: number) {
-  if (introT >= 1) return;
-  introT = Math.min(introT + dt / INTRO_SECONDS, 1);
-  const away = (1 - introT) ** 3;
-  orbitOffset.copy(introTo).sub(controls.target);
-  orbitOffset
-    .applyAxisAngle(THREE.Object3D.DEFAULT_UP, away * introSweep)
-    .multiplyScalar(1 + away * introPull);
-  orbitOffset.y += away * introRise;
-  camera.position.copy(controls.target).add(orbitOffset);
-  camera.lookAt(controls.target);
-  if (introT >= 1) skipIntro();
-}
 
 // ---------- balls ----------
 const ballGeo = new THREE.SphereGeometry(1, 24, 16);
@@ -2024,7 +1892,7 @@ function handleRemote(slot: number, m: Exclude<RemoteMsg, { t: 'identify' }>) {
     return;
   }
   if (slot !== activeRemoteSlot()) return; // not this phone's turn: its input does nothing
-  if (introT < 1) {
+  if (cam.introT < 1) {
     if (m.t === 'down') skipIntro();
     return;
   }
@@ -2135,13 +2003,13 @@ qualityBtn.addEventListener('click', () => {
 
 canvas.addEventListener('pointerdown', (ev) => {
   unlockAudio(); // browsers start audio only after a user gesture
-  if (introT < 1) {
+  if (cam.introT < 1) {
     skipIntro(); // the first tap during the fly-in only skips it
     return;
   }
   if (ev.pointerType === 'touch') {
     activeTouches.add(ev.pointerId);
-    if (orbitMode) return; // one finger orbits instead of throwing; let OrbitControls handle it
+    if (isOrbitMode()) return; // one finger orbits instead of throwing; let OrbitControls handle it
     if (activeTouches.size > 1) {
       throwPointer = null; // second finger = orbit/pinch, cancel the throw
       grab.entity = null;
@@ -2246,7 +2114,7 @@ function spaceUp() {
 
 addEventListener('keydown', (ev) => {
   unlockAudio();
-  if (introT < 1 && (phase === 'playing' || phase === 'title')) {
+  if (cam.introT < 1 && (phase === 'playing' || phase === 'title')) {
     skipIntro();
     if (ev.code === 'Space') ev.preventDefault();
     return;
@@ -2282,7 +2150,7 @@ addEventListener('blur', () => {
 
 /** Move the aim crosshair and orbit/zoom the camera from held keys. */
 function applyKeys(dt: number) {
-  if (keysDown.size === 0 || phase === 'menu' || introT < 1) return;
+  if (keysDown.size === 0 || phase === 'menu' || cam.introT < 1) return;
   const dx = (keysDown.has('ArrowRight') ? 1 : 0) - (keysDown.has('ArrowLeft') ? 1 : 0);
   const dy = (keysDown.has('ArrowDown') ? 1 : 0) - (keysDown.has('ArrowUp') ? 1 : 0);
   if (dx || dy) {
@@ -2957,7 +2825,7 @@ function tick(now: number) {
   for (const e of blocks) if (e.squash > 0) e.squash = Math.max(0, e.squash - fxDt / SQUASH_SECONDS);
   syncRender(acc / STEP);
   applyKeys(dt);
-  if (introT < 1) updateIntro(dt);
+  if (cam.introT < 1) updateIntro(dt);
   else {
     if (phase === 'won') orbitCamera(WIN_ORBIT_SPEED * dt);
     controls.update();
@@ -3056,8 +2924,8 @@ requestAnimationFrame(frame);
       })),
   crowdState: () => crowd.map((c) => Math.round(c.entity.currPos.distanceTo(c.home) * 100) / 100),
   cameraInfo: () => {
-    orbitSpherical.setFromVector3(camera.position.clone().sub(controls.target));
+    const spherical = new THREE.Spherical().setFromVector3(camera.position.clone().sub(controls.target));
     const r = (n: number) => Math.round(n * 100) / 100;
-    return { theta: r(orbitSpherical.theta), phi: r(orbitSpherical.phi), dist: r(orbitSpherical.radius) };
+    return { theta: r(spherical.theta), phi: r(spherical.phi), dist: r(spherical.radius) };
   },
 };
