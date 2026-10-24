@@ -35,6 +35,7 @@ const NB: Record<string, string> = {
   // page
   Tumble: 'Tumle',
   Levels: 'Nivåer',
+  Close: 'Lukk',
   'Toggle sound': 'Lyd av/på',
   'Sound settings': 'Lydinnstillinger',
   'Graphics quality': 'Grafikkvalitet',
@@ -163,6 +164,7 @@ const NB_CREATURE: Record<string, string> = {
 const creature = (name: string) => NB_CREATURE[name] ?? name;
 
 const PATTERNS: [RegExp, (...m: string[]) => string][] = [
+  [/^Next level \((\d+)\)$/, (_, n) => `Neste nivå (${n})`],
   [/^(\d+)\. (.+)$/, (_, n, name) => `${n}. ${toNorwegian(name)}`],
   [/^Score (\d+): gold blocks are worth 100 when they fall$/, (_, n) => `Få ${n} poeng: gullblokker er verdt 100 når de faller`],
   [/^Score (\d+)$/, (_, n) => `Poeng ${n}`],

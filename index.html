@@ -29,6 +29,9 @@
       .panel { background: var(--panel); border-radius: 16px; padding: 20px; max-width: 760px; width: 100%; max-height: 100%; overflow: auto; box-sizing: border-box; text-align: center; }
       .panel h1, .panel h2 { margin: 0 0 12px; }
       /* two columns of worlds on a wide screen, so the whole list fits without a scrollbar */
+      #menu .panel { position: relative; }
+      #menu-close { position: sticky; float: right; top: 0; z-index: 2; width: 40px; height: 40px; padding: 0; font-size: 1.2em; line-height: 1; border-radius: 50%; }
+      .isle .thumb { width: 100%; height: auto; aspect-ratio: 120 / 76; border-radius: 10px; display: block; margin-bottom: 4px; }
       #menu .panel { max-width: min(1180px, 100%); scrollbar-width: thin; }
       .worlds { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 520px), 1fr)); gap: 12px; text-align: left; align-items: start; }
       .world { border-radius: 14px; padding: 12px 14px 18px; background: linear-gradient(to bottom, var(--sky-top), var(--sky-horizon)); }
@@ -133,6 +136,7 @@
     </div>
     <div id="menu" class="overlay" hidden>
       <div class="panel">
+        <button type="button" id="menu-close" class="secondary" aria-label="Close">✕</button>
         <h1>Tumble</h1>
         <fieldset id="player-row" aria-label="Number of players"></fieldset>
         <div id="level-grid" class="worlds"></div>

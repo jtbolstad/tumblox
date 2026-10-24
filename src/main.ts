@@ -520,18 +520,38 @@ const ui = createUi({
   onSelect: (i, players) => {
     if (players > 1) startParty(i, players);
     else startSolo(i);
+    menuReturn = null;
     ui.hideMenu();
   },
   onRetry: () => restart(),
   onNext: () => startSolo(Math.min(levelIndex + 1, levels.length - 1)),
   onOpenMenu: () => openMenu(),
+  onCloseMenu: () => closeMenu(),
   onTitle: () => showTitle(),
 });
 
+let menuReturn: { phase: Phase; introLevel: number } | null = null;
+
 function openMenu() {
+  if (phase !== 'menu') menuReturn = { phase, introLevel };
   phase = 'menu';
   introLevel = -1; // picking a level from the menu flies in again
   ui.showMenu(levels, loadProgress());
+}
+
+/** Close the level list without picking: back to the title, or to the level (and its result) underneath. */
+function closeMenu() {
+  if (phase !== 'menu') return;
+  const back = menuReturn;
+  menuReturn = null;
+  ui.hideMenu();
+  if (!back || back.phase === 'menu' || back.phase === 'title' || levelIndex === TITLE_INDEX) {
+    showTitle();
+    return;
+  }
+  phase = back.phase;
+  introLevel = back.introLevel;
+  if (phase === 'won' || phase === 'lost') ui.restoreResult();
 }
 
 const TITLE_INDEX = -2; // levelIndex while the title scene is up (not -1, so it gets a fly-in)
@@ -679,6 +699,7 @@ function clearLevel() {
     m.dispose();
   }
   blockMeshes.length = 0;
+  tinted = null;
   shinyMats.length = 0;
   for (const b of balls) removeBallBody(b);
   balls.length = 0;
@@ -789,6 +810,7 @@ function loadLevel(index: number) {
     }
     if (SHINY[type] && material instanceof THREE.MeshStandardMaterial) shinyMats.push({ mat: material, type });
     const mesh = new THREE.InstancedMesh(boxGeo, material, count);
+    for (let i = 0; i < count; i++) mesh.setColorAt(i, WHITE); // per-block tint, used to mark the grabbed block
     mesh.castShadow = true;
     mesh.receiveShadow = true;
     mesh.frustumCulled = false;
@@ -851,6 +873,9 @@ function loadLevel(index: number) {
   }
 
   for (const spec of level.characters) spawnCharacter(spec, top);
+  // everything starts asleep, so the physics loop skips world.step; one step puts the new colliders into the
+  // scene queries, or the laser, hose and grab rays would find nothing until something woke up
+  world.step();
 
   frameCamera(true);
   startIntro();
@@ -1338,6 +1363,78 @@ function updateNozzle() {
   nozzle.y -= 0.6;
 }
 
+// the hose's water jet: a see-through tube from the nozzle to where it lands, with droplets and splash
+const jetGeo = new THREE.CylinderGeometry(0.16, 0.05, 1, 12, 1, true); // wide end (+y) at the target
+const jet = new THREE.Mesh(
+  jetGeo,
+  new THREE.MeshBasicMaterial({
+    color: 0x8fdcff,
+    transparent: true,
+    opacity: 0.5,
+    depthTest: false,
+    depthWrite: false,
+    side: THREE.DoubleSide,
+  }),
+);
+jet.renderOrder = 11;
+jet.frustumCulled = false;
+jet.visible = false;
+scene.add(jet);
+const jetCore = new THREE.Mesh(
+  new THREE.CylinderGeometry(0.07, 0.025, 1, 10, 1, true),
+  new THREE.MeshBasicMaterial({
+    color: 0xffffff,
+    transparent: true,
+    opacity: 0.7,
+    depthTest: false,
+    depthWrite: false,
+    side: THREE.DoubleSide,
+  }),
+);
+jetCore.renderOrder = 12;
+jet.add(jetCore);
+const jetUp = new THREE.Vector3(0, 1, 0);
+const jetColor = new THREE.Color(0x9fe0ff);
+const dropAt = new THREE.Vector3();
+
+/** Draw the jet from the nozzle to `beamEnd`, and throw water droplets along it. */
+function showJet(splash: boolean) {
+  const length = nozzle.distanceTo(beamEnd);
+  jet.position.copy(nozzle).add(beamEnd).multiplyScalar(0.5);
+  jet.quaternion.setFromUnitVectors(jetUp, beamDir);
+  jet.scale.set(1, Math.max(length, 0.01), 1);
+  jet.visible = true;
+  beam.visible = false;
+  // droplets: spread along the stream, drifting with it and sagging under their own weight
+  for (let i = 0; i < 5; i++) {
+    dropAt.copy(nozzle).lerp(beamEnd, Math.random());
+    sparks.emit(
+      dropAt,
+      beamDir.x * 6 + (Math.random() - 0.5) * 1.6,
+      beamDir.y * 6 + (Math.random() - 0.5) * 1.6,
+      beamDir.z * 6 + (Math.random() - 0.5) * 1.6,
+      jetColor,
+      0.35 + Math.random() * 0.3,
+      0.5,
+      false,
+    );
+  }
+  if (splash) {
+    for (let i = 0; i < 5; i++) {
+      sparks.emit(
+        beamEnd,
+        (Math.random() - 0.5) * 5,
+        1.5 + Math.random() * 4,
+        (Math.random() - 0.5) * 5,
+        jetColor,
+        0.4 + Math.random() * 0.4,
+        1.2,
+        false,
+      );
+    }
+  }
+}
+
 function showBeam(color: number, opacity: number) {
   const pos = beamGeo.getAttribute('position') as THREE.BufferAttribute;
   pos.setXYZ(0, nozzle.x, nozzle.y, nozzle.z);
@@ -1395,7 +1492,7 @@ function applyHose() {
   throwsUsed += STEP;
   lastMotion = simTime;
   const hit = castBeam(aim.x, aim.y, HOSE_RANGE);
-  showBeam(TOOLS.hose.color, 0.55);
+  showJet(hit !== null);
   if (!hit) return;
   sprayHit.copy(beamEnd);
   if (Math.random() < 0.5) particles.burst(sprayHit, TOOLS.hose.color, 1, 2);
@@ -1670,7 +1767,8 @@ function finishIfDone() {
     playStinger(medal === 'gold' ? 'gold' : 'win');
     playCrowd('cheer');
     celebrate(medal === 'gold' ? 40 : 26);
-    ui.showResult({ won: true, score, medal, best: saved.best, hasNext: levelIndex < levels.length - 1 });
+    const hasNext = levelIndex < levels.length - 1;
+    ui.showResult({ won: true, score, medal, best: saved.best, hasNext, autoNextSeconds: hasNext ? 7 : undefined });
   } else {
     playStinger('lose');
     playCrowd('aww');
@@ -1969,7 +2067,9 @@ addEventListener('keydown', (ev) => {
     if (ev.code === 'Space') ev.preventDefault();
     return;
   }
-  if (ev.code === 'Space') {
+  if (ev.code === 'Escape' && phase === 'menu') {
+    closeMenu();
+  } else if (ev.code === 'Space') {
     ev.preventDefault();
     if (!ev.repeat) spaceDown();
   } else if ((ev.code === 'Enter' || ev.code === 'NumpadEnter') && phase !== 'menu' && !ev.repeat) {
@@ -2125,6 +2225,24 @@ arc.frustumCulled = false;
 arcHalo.frustumCulled = arcDots.frustumCulled = false;
 arc.visible = false;
 scene.add(arc);
+
+const WHITE = new THREE.Color(1, 1, 1);
+const grabTint = new THREE.Color();
+let tinted: BlockEntity | null = null;
+
+/** The block being dragged glows and pulses (a Jenga tower is full of look-alikes), so you can see which one you hold. */
+function updateGrabHighlight(now: number) {
+  const held = grab.entity && grab.entity.status !== 'removed' ? grab.entity : null;
+  if (tinted && tinted !== held && tinted.status !== 'removed') {
+    tinted.mesh.setColorAt(tinted.instance, WHITE);
+    if (tinted.mesh.instanceColor) tinted.mesh.instanceColor.needsUpdate = true;
+  }
+  tinted = held;
+  if (!held) return;
+  const k = 1.7 + 0.5 * Math.sin(now / 110); // above 1 = brighter than the block's own colour
+  held.mesh.setColorAt(held.instance, grabTint.setRGB(k, k * 0.95, k * 0.6));
+  if (held.mesh.instanceColor) held.mesh.instanceColor.needsUpdate = true;
+}
 
 function updateGrabPreview() {
   arc.visible = false;
@@ -2655,6 +2773,8 @@ function tick(now: number) {
     if (beamLeft <= 0 && !spraying) beam.visible = false;
   }
   updateAimPreview(now);
+  updateGrabHighlight(now);
+  if (!spraying) jet.visible = false;
   sparkleGems(dt);
   updateCharacters(dt);
   updateNearMisses();

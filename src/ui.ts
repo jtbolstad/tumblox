@@ -4,6 +4,7 @@ import { MAX_PLAYERS, type PartyMode, partyModeFor } from './party';
 import type { LevelProgress } from './progress';
 import type { Medal } from './rules';
 import { THEME_IDS, THEMES } from './themes';
+import { levelThumb } from './thumb';
 import { TOOLS } from './tools';
 
 function el<T extends HTMLElement>(id: string): T {
@@ -41,12 +42,25 @@ export function goalText(goal: Goal): string {
   }
 }
 
+export interface ResultOpts {
+  won: boolean;
+  score: number;
+  medal: Medal | null;
+  best: number;
+  hasNext: boolean;
+  /** shown instead of "Out of throws" when the level was lost another way */
+  lostReason?: string;
+  /** start the next level by itself after this many seconds (a won level with a next one) */
+  autoNextSeconds?: number;
+}
+
 export interface UiHandlers {
   /** `players` is 1 for normal play, 2-4 for a hot-seat party game */
   onSelect: (index: number, players: number) => void;
   onRetry: () => void;
   onNext: () => void;
   onOpenMenu: () => void;
+  onCloseMenu: () => void;
   onTitle: () => void;
 }
 
@@ -70,9 +84,44 @@ export function createUi(handlers: UiHandlers) {
   const title = el('title');
   let ballColor = '#ffb703';
   let countsBalls = true; // false for the hose, whose budget is seconds of water
-  el('levels-btn').addEventListener('click', handlers.onOpenMenu);
-  el('retry-btn').addEventListener('click', handlers.onRetry);
-  el('next-btn').addEventListener('click', handlers.onNext);
+  el('menu-close').addEventListener('click', handlers.onCloseMenu);
+  el('levels-btn').addEventListener('click', () => {
+    cancelAutoNext();
+    handlers.onOpenMenu();
+  });
+  el('retry-btn').addEventListener('click', () => {
+    cancelAutoNext();
+    handlers.onRetry();
+  });
+  el('next-btn').addEventListener('click', () => {
+    cancelAutoNext();
+    handlers.onNext();
+  });
+
+  // after a cleared level the next one starts by itself; the button counts down
+  let autoNextTimer: ReturnType<typeof setInterval> | undefined;
+  function cancelAutoNext() {
+    clearInterval(autoNextTimer);
+    autoNextTimer = undefined;
+    el('next-btn').textContent = 'Next level';
+  }
+  function startAutoNext(seconds: number) {
+    cancelAutoNext();
+    let left = seconds;
+    const label = () => (el('next-btn').textContent = `Next level (${left})`);
+    label();
+    autoNextTimer = setInterval(() => {
+      left--;
+      if (left <= 0) {
+        cancelAutoNext();
+        handlers.onNext();
+      } else {
+        label();
+      }
+    }, 1000);
+  }
+  /** What the result panel last showed, so closing the level menu can bring it back. */
+  let lastResult: ResultOpts | null = null;
 
   function renderMenu() {
     if (!shown) return;
@@ -126,6 +175,7 @@ export function createUi(handlers: UiHandlers) {
           isle.className = 'isle';
           const m = Object.assign(document.createElement('span'), { className: 'm' });
           isle.append(
+            levelThumb(level),
             Object.assign(document.createElement('span'), { className: 'n', textContent: String(i + 1) }),
             Object.assign(document.createElement('span'), { className: 'name', textContent: level.name }),
             m,
@@ -148,6 +198,7 @@ export function createUi(handlers: UiHandlers) {
   return {
     showMenu(levels: readonly Level[], progress: Record<string, LevelProgress>) {
       shown = { levels, progress };
+      cancelAutoNext();
       renderMenu();
       result.hidden = true;
       title.hidden = true;
@@ -229,6 +280,8 @@ export function createUi(handlers: UiHandlers) {
       ballColor = `#${TOOLS[level.tool].color.toString(16).padStart(6, '0')}`;
       countsBalls = !TOOLS[level.tool].hose;
       result.hidden = true;
+      cancelAutoNext();
+      lastResult = null;
     },
     showTitle() {
       menu.hidden = true;
@@ -282,15 +335,8 @@ export function createUi(handlers: UiHandlers) {
       }
       el('score').textContent = String(score);
     },
-    showResult(opts: {
-      won: boolean;
-      score: number;
-      medal: Medal | null;
-      best: number;
-      hasNext: boolean;
-      /** shown instead of "Out of throws" when the level was lost another way */
-      lostReason?: string;
-    }) {
+    showResult(opts: ResultOpts) {
+      lastResult = opts;
       el('result-title').textContent = opts.won ? 'Level cleared!' : (opts.lostReason ?? 'Out of throws');
       const medal = el('result-medal');
       medal.textContent = opts.won ? (opts.medal ? MEDAL_ICON[opts.medal] : 'No medal') : '';
@@ -309,6 +355,12 @@ export function createUi(handlers: UiHandlers) {
         : 'Give it another go.';
       el('next-btn').hidden = !(opts.won && opts.hasNext);
       result.hidden = false;
+      if (opts.won && opts.hasNext && opts.autoNextSeconds) startAutoNext(opts.autoNextSeconds);
+      else cancelAutoNext();
+    },
+    /** Bring the last result panel back (closing the level menu on top of a finished level). */
+    restoreResult() {
+      if (lastResult) this.showResult({ ...lastResult, autoNextSeconds: undefined });
     },
   };
 }
