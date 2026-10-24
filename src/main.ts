@@ -1687,6 +1687,8 @@ function handleRemote(slot: number, m: Exclude<RemoteMsg, { t: 'identify' }>) {
     else if (isHoseTool()) {
       spraying = true;
       ui.hideBanner();
+    } else {
+      remoteHoldStart = performance.now();
     }
     return;
   }
@@ -1698,6 +1700,7 @@ function handleRemote(slot: number, m: Exclude<RemoteMsg, { t: 'identify' }>) {
   } else if (grab.entity) {
     grab.entity = null;
   } else if (!isGrabTool() && !isHoseTool()) {
+    remoteHoldStart = null;
     if (m.speed < TAP_SPEED_THRESHOLD && m.holdMs / 1000 >= MIN_CHARGE_SECONDS) {
       launch(aim.x, aim.y, flickForTier(chargeTier(m.holdMs / 1000)));
     } else {
@@ -1857,6 +1860,7 @@ canvas.addEventListener('pointercancel', (ev) => endPointer(ev, false));
 const keysDown = new Set<string>();
 const AIM_KEYS = ['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'];
 let chargeStart: number | null = null; // performance.now() when Space went down on a throwing tool
+let remoteHoldStart: number | null = null; // same, for a phone holding its throw button down
 
 function flickForTier(tier: number) {
   return [0, params.flickLight, params.flickMedium, params.flickFull][tier];
@@ -2100,19 +2104,23 @@ function updateAimPreview(now: number) {
     updateBeamPreview();
     return;
   }
-  const charging = chargeStart !== null;
+  const charging = chargeStart !== null || remoteHoldStart !== null;
   const pressing = throwPointer !== null || charging;
   const show = aim.visible && canThrow();
   ring.visible = arc.visible = show;
   if (!show) return;
 
-  // live flick speed includes "now", so the preview drops as the pointer slows
-  const live = pressing && !charging ? [...samples, { t: now, x: aim.x, y: aim.y }] : [];
+  // a flick overrides charging; little movement while held charges like the keyboard's Space bar
+  const live = throwPointer !== null ? [...samples, { t: now, x: aim.x, y: aim.y }] : [];
+  const swipeSpeed = throwPointer !== null ? releaseVelocity(live).speed : 0;
+  const pointerHeld = throwPointer !== null && swipeSpeed < TAP_SPEED_THRESHOLD;
+  const heldStart = chargeStart ?? remoteHoldStart ?? (pointerHeld ? pointerDownTime : null);
+  const heldSeconds = heldStart !== null ? (performance.now() - heldStart) / 1000 : 0;
   const speed =
-    chargeStart !== null
-      ? flickForTier(chargeTier((performance.now() - chargeStart) / 1000))
+    heldStart !== null && (charging || heldSeconds >= MIN_CHARGE_SECONDS)
+      ? flickForTier(chargeTier(heldSeconds))
       : pressing
-        ? releaseVelocity(live).speed
+        ? swipeSpeed
         : 0;
   const s = computeShot(aim.x, aim.y, speed);
   hudTier.textContent = pressing ? tierNames[s.tier] : '-';
