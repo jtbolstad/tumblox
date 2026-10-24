@@ -182,7 +182,6 @@ function resize() {
 }
 addEventListener('resize', resize);
 resize();
-applyQuality();
 
 // ---------- physics ----------
 const world = new RAPIER.World({ x: 0, y: -params.gravity, z: 0 });
@@ -282,6 +281,7 @@ const worldTheme = createWorldTheme({
   setAmbience,
   blockTexture,
 });
+applyQuality(); // deferred until here: reads worldTheme, built just above
 
 // ---------- game state ----------
 const levels = loadBundledLevels();
