@@ -74,6 +74,7 @@ export function createUi(handlers: UiHandlers) {
   const calloutBox = el('callout');
   const banner = el('banner');
   let bannerTimer: ReturnType<typeof setTimeout> | undefined;
+  let countdownTimer: ReturnType<typeof setInterval> | undefined;
   let players = 1;
   let shown: { levels: readonly Level[]; progress: Record<string, LevelProgress> } | null = null;
   let toastTimer: ReturnType<typeof setTimeout> | undefined;
@@ -226,23 +227,36 @@ export function createUi(handlers: UiHandlers) {
       void calloutBox.offsetWidth; // restart the CSS animation
       calloutBox.classList.add('show');
     },
-    /** The start-of-level card: what to do here. Stays a few seconds, or until the player acts. */
-    showBanner(brief: Brief, seconds = 5) {
+    /** The start-of-level card: what to do here. Counts down its last few seconds, or until the player acts. */
+    showBanner(brief: Brief, seconds = 4) {
+      const countdown = Object.assign(document.createElement('div'), { className: 'countdown' });
       banner.replaceChildren(
         Object.assign(document.createElement('div'), { className: 'title', textContent: brief.title }),
         Object.assign(document.createElement('div'), { className: 'goal', textContent: brief.goal }),
         ...brief.lines.map((line) =>
           Object.assign(document.createElement('div'), { className: 'line', textContent: line }),
         ),
+        countdown,
       );
       banner.hidden = false;
       banner.classList.remove('leaving');
       clearTimeout(bannerTimer);
-      bannerTimer = setTimeout(() => this.hideBanner(), seconds * 1000);
+      clearInterval(countdownTimer);
+      let remaining = seconds;
+      const tick = () => {
+        remaining--;
+        countdown.textContent = remaining > 0 && remaining <= 3 ? `Starting in ${remaining}…` : '';
+        if (remaining <= 0) {
+          clearInterval(countdownTimer);
+          this.hideBanner();
+        }
+      };
+      countdownTimer = setInterval(tick, 1000);
     },
     hideBanner() {
       if (banner.hidden || banner.classList.contains('leaving')) return;
       clearTimeout(bannerTimer);
+      clearInterval(countdownTimer);
       banner.classList.add('leaving'); // fades out, then hides
       bannerTimer = setTimeout(() => {
         banner.hidden = true;

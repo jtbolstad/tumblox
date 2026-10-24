@@ -57,17 +57,22 @@ const NB: Record<string, string> = {
   'Tilt and turn the phone to aim. A faster swipe throws harder, or hold your finger down to charge.':
     'Vipp og vri mobilen for å sikte. Raskere sveip gir hardere kast, eller hold fingeren nede for å lade.',
   'Tumble remote': 'Tumle-fjernkontroll',
-  'Hold your phone like a wand and point it at the screen.': 'Hold mobilen som en tryllestav og pek den mot skjermen.',
+  'Hold your phone like a wand and point it at the screen.':
+    'Hold mobilen som en tryllestav og pek den mot skjermen.',
   Connect: 'Koble til',
   'Connecting…': 'Kobler til…',
   'Connected. Point at the screen.': 'Koblet til. Pek mot skjermen.',
   'Disconnected. Reload the page to connect again.': 'Frakoblet. Last siden på nytt for å koble til igjen.',
-  'Could not connect. Is the game open on the other screen?': 'Fikk ikke koblet til. Er spillet åpent på den andre skjermen?',
-  'Motion sensors are needed to aim. Allow them and try again.': 'Bevegelsessensorer trengs for å sikte. Tillat dem og prøv igjen.',
-  'Scan the QR code on the game screen to open this page.': 'Skann QR-koden på spillskjermen for å åpne denne siden.',
+  'Could not connect. Is the game open on the other screen?':
+    'Fikk ikke koblet til. Er spillet åpent på den andre skjermen?',
+  'Motion sensors are needed to aim. Allow them and try again.':
+    'Bevegelsessensorer trengs for å sikte. Tillat dem og prøv igjen.',
+  'Scan the QR code on the game screen to open this page.':
+    'Skann QR-koden på spillskjermen for å åpne denne siden.',
   'Swipe up here to throw': 'Sveip opp her for å kaste',
   'Recenter aim': 'Sentrer siktet',
-  'Tilt and turn the phone to aim. A faster swipe throws harder.': 'Vipp og vri mobilen for å sikte. Raskere sveip gir hardere kast.',
+  'Tilt and turn the phone to aim. A faster swipe throws harder.':
+    'Vipp og vri mobilen for å sikte. Raskere sveip gir hardere kast.',
   'Toggle sound': 'Lyd av/på',
   'Sound settings': 'Lydinnstillinger',
   'Graphics quality': 'Grafikkvalitet',
@@ -77,7 +82,8 @@ const NB: Record<string, string> = {
   'Number of players': 'Antall spillere',
   'Title screen': 'Tittelskjerm',
   About: 'Om',
-  'Throw, blast and pull blocks until the island tumbles.': 'Kast, sprengt og trekk blokker til øya raser sammen.',
+  'Throw, blast and pull blocks until the island tumbles.':
+    'Kast, sprengt og trekk blokker til øya raser sammen.',
   Play: 'Spill',
   'Go on, throw something at the title.': 'Kom igjen, kast noe på tittelen.',
   Result: 'Resultat',
@@ -118,12 +124,14 @@ const NB: Record<string, string> = {
   'Flick to throw a ball': 'Sveip for å kaste en ball',
   'Flick to throw a heavy ball': 'Sveip for å kaste en tung ball',
   'Flick to throw a bouncy ball': 'Sveip for å kaste en sprettball',
-  'Flick to throw: your balls explode when they hit': 'Sveip for å kaste: ballene dine eksploderer når de treffer',
+  'Flick to throw: your balls explode when they hit':
+    'Sveip for å kaste: ballene dine eksploderer når de treffer',
   'Tap a block to zap it with the laser': 'Trykk på en blokk for å skyte den med laser',
   'Hold down to spray water and push blocks': 'Hold inne for å spyle vann og dytte blokker',
   'Press on a block and drag it out': 'Trykk på en blokk og dra den ut',
   'Red bombs explode when hit hard': 'Røde bomber eksploderer når de treffes hardt',
-  'Green chemicals blow up when two of them touch': 'Grønne kjemikalier sprenges når to av dem berører hverandre',
+  'Green chemicals blow up when two of them touch':
+    'Grønne kjemikalier sprenges når to av dem berører hverandre',
   'Pink penalty blocks cost 100 if they fall': 'Rosa straffeblokker koster 100 hvis de faller',
   'Purple blocks vanish when hit': 'Lilla blokker forsvinner når de treffes',
   'Dark purple blocks need three hits to vanish': 'Mørklilla blokker trenger tre treff for å forsvinne',
@@ -132,7 +140,8 @@ const NB: Record<string, string> = {
   'Clouds float away once something bumps them': 'Skyer flyter av gårde når noe dytter borti dem',
   'Ice is slippery': 'Is er glatt',
   'Steel is heavy and hard to shift': 'Stål er tungt og vanskelig å flytte',
-  'Land gold blocks in the ×2 / ×3 zones for more points': 'Land gullblokker i ×2 / ×3-sonene for flere poeng',
+  'Land gold blocks in the ×2 / ×3 zones for more points':
+    'Land gullblokker i ×2 / ×3-sonene for flere poeng',
   // worlds
   Meadow: 'Engen',
   'Tiki Isle': 'Tikiøya',
@@ -198,11 +207,17 @@ const creature = (name: string) => NB_CREATURE[name] ?? name;
 const PATTERNS: [RegExp, (...m: string[]) => string][] = [
   [/^Next level \((\d+)\)$/, (_, n) => `Neste nivå (${n})`],
   [/^(\d+)\. (.+)$/, (_, n, name) => `${n}. ${toNorwegian(name)}`],
-  [/^Score (\d+): gold blocks are worth 100 when they fall$/, (_, n) => `Få ${n} poeng: gullblokker er verdt 100 når de faller`],
+  [
+    /^Score (\d+): gold blocks are worth 100 when they fall$/,
+    (_, n) => `Få ${n} poeng: gullblokker er verdt 100 når de faller`,
+  ],
   [/^Score (\d+)$/, (_, n) => `Poeng ${n}`],
   [/^Best (\d+)$/, (_, n) => `Rekord ${n}`],
   [/^Pull out (\d+) blocks$/, (_, n) => `Trekk ut ${n} blokker`],
-  [/^Pull (\d+) blocks out without toppling the tower$/, (_, n) => `Trekk ut ${n} blokker uten å velte tårnet`],
+  [
+    /^Pull (\d+) blocks out without toppling the tower$/,
+    (_, n) => `Trekk ut ${n} blokker uten å velte tårnet`,
+  ],
   [/^(\d+) throws?$/, (_, n) => `${n} kast`],
   [/^(\d+) grabs?$/, (_, n) => `${n} grep`],
   [/^(\d+) shots?$/, (_, n) => `${n} skudd`],
@@ -211,13 +226,17 @@ const PATTERNS: [RegExp, (...m: string[]) => string][] = [
   [/^Keep the (.+) on the platform!$/, (_, name) => `Hold ${creature(name)} på plattformen!`],
   [/^Knock the (.+) off for a bonus$/, (_, name) => `Dytt ${creature(name)} av for bonus`],
   [/^Chain ×(\d+)!$/, (_, n) => `Kjede ×${n}!`],
+  [/^Starting in (\d+)…$/, (_, n) => `Starter om ${n}…`],
   [/^(P\d)'s turn$/, (_, who) => `${who} sin tur`],
   [/^(P\d)'s turn — wait for yours$/, (_, who) => `${who} sin tur — vent på din`],
   [/^You are (P\d)\. Point at the screen\.$/, (_, who) => `Du er ${who}. Pek mot skjermen.`],
   [/^(P\d) toppled it!$/, (_, who) => `${who} veltet det!`],
   [/^(.+) wins!$/, (_, who) => `${who} vinner!`],
   [/^Tie: (.+)$/, (_, who) => `Uavgjort: ${who}`],
-  [/^(.+) is the last one standing( \(turn limit reached\))?$/, (_, who, limit) => `${who} står igjen som den siste${limit ? ' (rundegrensen nådd)' : ''}`],
+  [
+    /^(.+) is the last one standing( \(turn limit reached\))?$/,
+    (_, who, limit) => `${who} står igjen som den siste${limit ? ' (rundegrensen nådd)' : ''}`,
+  ],
 ];
 
 /** Norwegian for one piece of text; unknown text comes back unchanged. */
