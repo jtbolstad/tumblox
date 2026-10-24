@@ -4,6 +4,7 @@ import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
 import { createAimInput, createAimVisuals, MIN_CHARGE_SECONDS, TAP_SPEED_THRESHOLD } from './aim-input';
 import { playCrowd, playLaser, playScore, playStinger, setAmbience, unlockOnFirstGesture } from './audio';
+import { createBalls } from './balls';
 import { BLOCKS, type BlockType } from './blocks';
 import { levelBrief } from './brief';
 import { createCameraRig } from './camera-runtime';
@@ -30,6 +31,7 @@ import { startTranslating } from './i18n';
 import { type Level, loadBundledLevels } from './level';
 import { createLevelRuntime } from './level-runtime';
 import { blockTexture } from './marks';
+import { blockMaterial, boxGeo, hiddenMatrix, titleOutlineMat } from './materials';
 import { initMusic, setTrack } from './music';
 import { type Party, partyModeFor } from './party';
 import { createPhysicsStep } from './physics-step';
@@ -57,13 +59,12 @@ import { addLights, CATCH_FLOOR_Y, ISLAND_RADIUS, makeClouds, makeContactShadow,
 import { THEMES } from './themes';
 import { chargeTier } from './throw';
 import { createToolFx } from './tool-fx';
-import { TOOL_IDS, TOOLS, type ToolId } from './tools';
+import { TOOLS } from './tools';
 import { createUi } from './ui';
 import { createWorldTheme } from './world-theme';
 
 const STEP = 1 / 60;
 const MAX_STEPS_PER_FRAME = 5;
-const MAX_BALLS = 12;
 const BALL_FLIGHT_SECONDS = 6; // a ball counts as "in motion" for this long after launch
 const FALL_MARGIN = 0.3; // a block is fallen once its centre drops this far below the platform top
 const SLOWMO_SCALE = 0.4;
@@ -256,54 +257,11 @@ function buildCrowd() {
   );
 }
 
-/**
- * Black ink outline for the title letters: a back-face copy of the block pushed out along its normals by a fixed
- * distance in metres, whatever the block's size (shares the block's instance matrices).
- */
-function outlineMaterial(thickness: number) {
-  const mat = new THREE.MeshBasicMaterial({ color: 0x000000, side: THREE.BackSide, fog: false });
-  mat.onBeforeCompile = (shader) => {
-    shader.vertexShader = shader.vertexShader.replace(
-      '#include <begin_vertex>',
-      `#include <begin_vertex>
-      vec3 blockSize = vec3(length(instanceMatrix[0].xyz), length(instanceMatrix[1].xyz), length(instanceMatrix[2].xyz));
-      transformed += normalize(normal) * ${thickness.toFixed(3)} / blockSize;`,
-    );
-  };
-  return mat;
-}
-const titleOutlineMat = outlineMaterial(0.09);
-const boxGeo = new RoundedBoxGeometry(1, 1, 1, 2, 0.07); // bevelled like a wooden toy block
-const hiddenMatrix = new THREE.Matrix4().makeScale(0, 0, 0);
 const platformMat = new THREE.MeshStandardMaterial({
   color: 0xc8a27a,
   roughness: 0.8,
   map: blockTexture('wood', false),
 });
-
-const blockMats = new Map<BlockType, THREE.MeshStandardMaterial>();
-
-/** Shared material per block type: painted face texture plus a finish that suits the material. */
-function blockMaterial(type: BlockType) {
-  const hit = blockMats.get(type);
-  if (hit) return hit;
-  const finish: Partial<Record<BlockType, THREE.MeshStandardMaterialParameters>> = {
-    steel: { metalness: 0.25, roughness: 0.45 },
-    point: { metalness: 0.55, roughness: 0.3 },
-    gem: { metalness: 0.1, roughness: 0.15, emissive: BLOCKS.gem.color, emissiveIntensity: 0.18 },
-    ice: { roughness: 0.12, emissive: BLOCKS.ice.color, emissiveIntensity: 0.1 },
-    wood: { roughness: 0.8 },
-    immobile: { roughness: 0.95 },
-  };
-  const mat = new THREE.MeshStandardMaterial({
-    color: BLOCKS[type].color,
-    map: blockTexture(type),
-    roughness: 0.6,
-    ...finish[type],
-  });
-  blockMats.set(type, mat);
-  return mat;
-}
 
 // ---------- worlds ----------
 const worldTheme = createWorldTheme({
@@ -340,6 +298,16 @@ let spraying = false; // hose held down
 let beamLeft = 0; // s the laser beam stays visible
 let physicsIdle = true; // everything asleep: world.step is skipped
 let bonus = 0; // chain-reaction points this attempt
+
+const { spawnBall, removeBallBody } = createBalls({
+  world,
+  scene,
+  balls,
+  colliderOwner,
+  getLevel: () => level,
+  getMassScale: () => params.massScale,
+  getRadiusScale: () => params.radiusScale,
+});
 
 const ui = createUi({
   onSelect: (i, players) => {
@@ -665,54 +633,6 @@ function startIntro() {
 // ---------- camera moves: result orbit, slow-mo push-in ----------
 let push = 0;
 const pushOffset = new THREE.Vector3();
-
-// ---------- balls ----------
-const ballGeo = new THREE.SphereGeometry(1, 24, 16);
-const toolMats = Object.fromEntries(
-  TOOL_IDS.map((id) => [id, new THREE.MeshStandardMaterial({ color: TOOLS[id].color, roughness: 0.35 })]),
-) as Record<ToolId, THREE.MeshStandardMaterial>;
-
-function spawnBall(origin: THREE.Vector3, velocity: THREE.Vector3) {
-  const tool = TOOLS[level.tool];
-  const r = tool.radius * params.radiusScale;
-  const body = world.createRigidBody(
-    RAPIER.RigidBodyDesc.dynamic()
-      .setTranslation(origin.x, origin.y, origin.z)
-      .setLinvel(velocity.x, velocity.y, velocity.z)
-      .setCcdEnabled(true), // fast balls must not tunnel through blocks
-  );
-  const collider = world.createCollider(
-    RAPIER.ColliderDesc.ball(r)
-      .setMass(tool.mass * params.massScale)
-      .setFriction(tool.friction)
-      .setRestitution(tool.restitution)
-      .setActiveEvents(RAPIER.ActiveEvents.COLLISION_EVENTS),
-    body,
-  );
-  const mesh = new THREE.Mesh(ballGeo, toolMats[level.tool]);
-  mesh.scale.setScalar(r);
-  mesh.castShadow = true;
-  scene.add(mesh);
-  const ball: BallEntity = {
-    ...makeEntityBase(body, collider),
-    mesh,
-    age: 0,
-    tool: level.tool,
-    exploding: false,
-  };
-  balls.push(ball);
-  colliderOwner.set(collider.handle, ball);
-  if (balls.length > MAX_BALLS) {
-    const oldest = balls.shift();
-    if (oldest) removeBallBody(oldest);
-  }
-}
-
-function removeBallBody(e: BallEntity) {
-  colliderOwner.delete(e.collider.handle);
-  world.removeRigidBody(e.body);
-  scene.remove(e.mesh);
-}
 
 // ---------- behaviours: explode / vanish ----------
 function removeBlock(e: BlockEntity) {
