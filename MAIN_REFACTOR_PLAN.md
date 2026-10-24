@@ -80,17 +80,23 @@ step, zero behavior change. Tick boxes as steps land.
 - [x] 11. **hud-panels.ts** — mute/sound/lang/quality button wiring, as `createHudPanels`.
   `QUALITIES`/`Quality` moved here (main.ts imports them back); `quality` stays a `let` in
   main.ts behind `getQuality`/`setQuality`, with `applyQuality` passed in.
-- [ ] 12. Final pass: confirm what's left in main.ts is bootstrap only (renderer/scene/
-  world setup, entity arrays, wiring the extracted modules, the frame/tick loop).
-  Target ~300-400 lines.
+- [x] 12. Final pass. main.ts is 1579 lines (from 3081) — well above the original
+  ~300-400 line guess, but that guess didn't account for how much legitimately has to live
+  here: `loadLevel`/`clearLevel` (scene/physics-body construction for a level, using mesh/
+  material state built in this same file: `boxGeo`, `platformMat`, `blockMaterial`,
+  `titleOutlineMat`, `shinyMats`, `zoneMeshes`), `stepPhysics`/`finishIfDone` (the per-tick
+  orchestrator reaching into every extracted module), the remote-control glue (`handleRemote`/
+  `remoteCommand`/`updateRemoteState`), renderer/scene/world bootstrap, and the frame/tick loop
+  itself. Each of these was already evaluated for extraction (steps 7, 9, 10) and kept here on
+  purpose — they're the seams where the extracted modules get wired together, not leftover mess.
+  No further splitting planned; what's left is the orchestrator by design.
 
 ## Status
 
-Steps 0-8, 10, 11 executed by background haiku agents (cheap, prescriptive prompts, one
-commit per step). Step 9 done directly instead, given how central the state it touches is.
-Only step 12 (final pass) remains.
-- Last known main.ts line count: 1579 (after step 9; 1708 after step 11; 1769 after step 8;
-  2152 after step 6; 2491 after step 5; 3081 was the pre-refactor baseline)
+Done. Steps 0-8, 10, 11 executed by background haiku agents (cheap, prescriptive prompts,
+one commit per step); step 9 done directly instead, given how central the state it touches
+is; step 12 was a review pass, no code change.
+- Final main.ts line count: 1579 (3081 was the pre-refactor baseline)
 - Manual browser smoke test (throw, grab, laser, hose, party mode) still required
   before this is trusted, per CLAUDE.md testing norms — automated gate is tsc+vitest
   only, no UI exercised during the mechanical move.
