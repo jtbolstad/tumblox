@@ -22,6 +22,10 @@ const CROWD_DENSITY = 0.25; // light, so a ball sends them flying
 const CROWD_HOME_DELAY = 1.5; // s at rest away from home before poofing back
 // mostly dancing to the music, with some standing and waving in between
 const IDLE_ROUTINE: Mood[] = ['idle', 'idle', 'wave', 'dance', 'dance', 'dance'];
+// a win surprise: a handful of spectators step down and circle the pedestal in a ring dance
+const RING_COUNT = 6;
+const RING_PAD = 1.7; // m beyond the pedestal edge
+const RING_ORBIT_SPEED = 0.3; // rad/s, slow enough to read as a dance, not a run
 
 interface Spectator {
   entity: CharacterEntity;
@@ -61,6 +65,7 @@ export function createCrowd(deps: {
   getUpIfFallenOver: (c: CharacterEntity) => void;
   hitReaction: (c: CharacterEntity) => void;
   popupAt: (at: THREE.Vector3, text: string, negative: boolean, color?: string) => void;
+  getPedestalHalf: () => number;
 }) {
   const {
     scene,
@@ -75,6 +80,7 @@ export function createCrowd(deps: {
     getUpIfFallenOver,
     hitReaction,
     popupAt,
+    getPedestalHalf,
   } = deps;
 
   const crowd: Spectator[] = [];
@@ -82,6 +88,62 @@ export function createCrowd(deps: {
   const puffPos = new THREE.Vector3();
   const puffVel = new THREE.Vector3();
   const crowdLook = new THREE.Vector3();
+
+  // ---------- ring dance: a win-only surprise, entirely separate from the physics-bodied crowd ----------
+  interface RingDancer {
+    rig: CharacterRig;
+    angle0: number;
+    yOff: number;
+  }
+  const ringDancers: RingDancer[] = [];
+  let ringActive = false;
+  let ringRadius = 0;
+  let ringOrbitAngle = 0;
+  let lastThemeId: ThemeId | null = null;
+  let lastLevelKinds: CharacterKind[] = [];
+
+  function disposeRing() {
+    for (const r of ringDancers) scene.remove(r.rig.root);
+    ringDancers.length = 0;
+    ringActive = false;
+  }
+
+  function buildRing() {
+    disposeRing();
+    if (!lastThemeId) return;
+    const rand = seeded((Math.random() * 2 ** 31) | 0);
+    const palette = crowdKinds(lastThemeId, THEMES[lastThemeId].crowd, lastLevelKinds);
+    ringRadius = getPedestalHalf() + RING_PAD;
+    for (let i = 0; i < RING_COUNT; i++) {
+      const kind: CharacterKind = palette[Math.floor(rand() * palette.length)];
+      const rig = new CharacterRig(kind, false, lastThemeId);
+      rig.danceStyle = Math.floor(rand() * 3);
+      const scale = CROWD_SCALE.ground * (0.9 + rand() * 0.15);
+      rig.root.scale.setScalar(scale);
+      scene.add(rig.root);
+      ringDancers.push({
+        rig,
+        angle0: (i / RING_COUNT) * Math.PI * 2,
+        yOff: (CHARACTERS[kind].size[1] / 2) * scale,
+      });
+    }
+    ringOrbitAngle = 0;
+    ringActive = true;
+  }
+
+  function updateRing(dt: number, beat: number) {
+    if (!ringActive) return;
+    ringOrbitAngle += RING_ORBIT_SPEED * dt;
+    for (const r of ringDancers) {
+      const a = r.angle0 + ringOrbitAngle;
+      const x = Math.cos(a) * ringRadius;
+      const z = Math.sin(a) * ringRadius;
+      r.rig.root.position.set(x, r.yOff, z);
+      r.rig.root.quaternion.setFromAxisAngle(THREE.Object3D.DEFAULT_UP, Math.atan2(-x, -z));
+      r.rig.mood = 'dance';
+      r.rig.update(dt, null, beat);
+    }
+  }
 
   function removeCrowd() {
     for (const s of crowd) {
@@ -103,6 +165,9 @@ export function createCrowd(deps: {
     count: number,
   ) {
     removeCrowd();
+    disposeRing();
+    lastThemeId = themeId;
+    lastLevelKinds = levelCharacterKinds;
     if (!themeId) return;
     const rand = seeded((Math.random() * 2 ** 31) | 0); // a different crowd every time
     const palette = crowdKinds(themeId, THEMES[themeId].crowd, levelCharacterKinds);
@@ -183,6 +248,7 @@ export function createCrowd(deps: {
       colliderOwner.set(s.entity.collider.handle, s.entity);
     }
     syncCrowd(1);
+    disposeRing();
   }
 
   /** A puff of smoke and sparkles where a spectator vanishes or reappears. */
@@ -270,6 +336,10 @@ export function createCrowd(deps: {
       rig.root.updateMatrixWorld();
       rig.update(dt, rig.root.worldToLocal(crowdLook), beat);
     });
+    if (phase === 'won') {
+      if (!ringActive) buildRing();
+    } else if (ringActive) disposeRing();
+    updateRing(dt, beat);
   }
 
   return { crowd, buildCrowd, resetCrowd, stepCrowd, syncCrowd, updateCrowd, isSpectator, bonk, crowdCheer };

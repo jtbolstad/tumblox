@@ -513,6 +513,15 @@ function costume(theme: ThemeId, kind: CharacterKind, look: Look): { head: Part[
         head.push(p(box(hw * 0.6, 0.14, hw * 0.46), 0x333333, [cx, top + 0.09, cz]));
         head.push(p(box(hw * 0.64, 0.04, hw * 0.5), 0xc0504d, [cx, top + 0.03, cz]));
       }
+      if (kind === 'human') {
+        // a bushy chin beard, wider at the jaw and tapering down
+        const beards = [0x3a2a1c, 0x4a3522, 0x2f2217];
+        const chin = hb.min.y;
+        const headFront = hb.max.z;
+        head.push(p(box(hw * 0.62, 0.15, 0.13), beards[0], [cx, chin + 0.04, headFront - 0.04]));
+        head.push(p(box(hw * 0.4, 0.14, 0.12), beards[1], [cx, chin - 0.07, headFront - 0.08]));
+        head.push(p(box(hw * 0.2, 0.12, 0.1), beards[2], [cx, chin - 0.17, headFront - 0.1]));
+      }
       // sash and a dangling buckle, like a cutlass belt
       body.push(p(box(bw * 0.6, 0.08, 0.03), 0xc0504d, [0, ny - 0.3, front + 0.015]));
       body.push(p(box(0.08, 0.1, 0.035), 0xe8c66a, [bw * 0.1, ny - 0.3, front + 0.02]));

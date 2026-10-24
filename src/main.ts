@@ -58,6 +58,7 @@ import {
   zoneMultiplier,
 } from './rules';
 import { addLights, CATCH_FLOOR_Y, ISLAND_RADIUS, makeClouds, makeContactShadow, makeSky } from './scene';
+import { createSkyEvents } from './sky-event';
 import { THEMES } from './themes';
 import { chargeTier } from './throw';
 import { createToolFx } from './tool-fx';
@@ -218,6 +219,7 @@ const glow = new Puffs(scene, 120, THREE.AdditiveBlending);
 const shockwaves = new Shockwaves(scene);
 const debris = new Debris(scene);
 const fireworks = createFireworks({ camera, sparks, glow });
+const skyEvents = createSkyEvents(scene);
 const { beam, jet, beamMat, beamEnd, beamDir, castBeam, showBeam, showJet } = createToolFx({
   scene,
   camera,
@@ -247,6 +249,7 @@ const {
   getUpIfFallenOver: (c) => characters.getUpIfFallenOver(c),
   hitReaction: (c) => characters.hitReaction(c),
   popupAt,
+  getPedestalHalf: () => Math.max(...level.platform.size) / 2,
 });
 /** `buildCrowd` keeps the old no-arg call shape (reads the current theme/spots/level/quality). */
 function buildCrowd() {
@@ -1256,7 +1259,10 @@ function tick(now: number) {
   characters.updateNearMisses();
   updateCrowd(dt);
   fireworks.updateFireworks(now);
+  skyEvents.update(dt);
   worldTheme.updateSails(dt);
+  worldTheme.updateFloat(dt);
+  if (platformMesh) platformMesh.position.y = level.platform.top / 2 + worldTheme.getFloatOffset();
   updateTrails();
   particles.update(fxDt, params.gravity);
   sparks.update(fxDt);

@@ -40,6 +40,7 @@ export function createWorldTheme(deps: {
   const { getLevel, setTrack, setAmbience, blockTexture } = deps;
 
   let themeId: ThemeId | null = null;
+  let floatTime = 0; // worlds with a sea gently bob the island and pedestal on it
   let island: THREE.Group | null = null;
   let props: THREE.Group | null = null;
   let crowdSpots: Spot[] = [];
@@ -145,11 +146,25 @@ export function createWorldTheme(deps: {
     for (const sail of windmillSails) sail.rotation.z += SAIL_SPEED * dt;
   }
 
+  /** Worlds with a sea bob their island gently, as if it floats on the water. */
+  function updateFloat(dt: number) {
+    const sea = themeId ? THEMES[themeId].sea : undefined;
+    if (sea === undefined) {
+      floatTime = 0;
+      if (island) island.position.y = 0;
+      return;
+    }
+    floatTime += dt;
+    if (island) island.position.y = Math.sin(floatTime * 1.8) * 0.045;
+  }
+
   return {
     applyProps,
     applyTheme,
     applyStageLight,
     updateSails,
+    updateFloat,
+    getFloatOffset: () => (island ? island.position.y : 0),
     getThemeId: () => themeId,
     getCrowdSpots: () => crowdSpots,
   };

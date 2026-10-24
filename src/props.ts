@@ -684,6 +684,129 @@ function arena(
   return { parts, tops, solids };
 }
 
+/**
+ * Pirate Cove's arena: one big galleon beached behind the play area, instead of the giant block
+ * stands every other world gets. A stepped, bevelled hull (still built like a toy, not a real keel),
+ * a plank deck with a rail facing the camera, a raised sterncastle, a bow figurehead, and two masts
+ * with crow's nests spectators can climb up into.
+ */
+function pirateShip(rand: () => number): {
+  parts: Part[];
+  tops: (Spot & { tier: number })[];
+  solids: Solid[];
+} {
+  const palette = THEMES.pirate.arena;
+  const colour = () => palette[Math.floor(rand() * palette.length)];
+  const parts: Part[] = [];
+  const tops: (Spot & { tier: number })[] = [];
+  const solids: Solid[] = [];
+  const faceAt = (x: number, z: number) => Math.atan2(-x, -z);
+
+  const Z = -17; // hull centre, behind the pedestal
+  const LEN = 34; // bow to stern
+  const BEAM = 11; // full hull width
+  const HULL_H = 6.5;
+
+  const addSolid = (x: number, y: number, z: number, size: [number, number, number]) =>
+    solids.push({ pos: new THREE.Vector3(x, y, z), size, face: faceAt(x, z) });
+
+  // hull: three stepped tiers, narrower going up, shaded darker at the waterline
+  const tiers = [
+    { h: HULL_H * 0.42, beam: BEAM, y: 0 },
+    { h: HULL_H * 0.34, beam: BEAM * 0.82, y: HULL_H * 0.42 },
+    { h: HULL_H * 0.24, beam: BEAM * 0.64, y: HULL_H * 0.76 },
+  ];
+  for (const t of tiers) {
+    const c = colour();
+    const part = p(new RoundedBoxGeometry(LEN, t.h, t.beam, 2, 0.3), c, [0, t.y + t.h / 2, Z]);
+    shadeByHeight(part, t.y, t.y + t.h);
+    parts.push(part);
+    addSolid(0, t.y + t.h / 2, Z, [LEN, t.h, t.beam]);
+  }
+  const deckBeam = tiers[2].beam;
+  const deckY = HULL_H;
+
+  // plank deck, inset so a rim of hull shows at the edge
+  parts.push(p(box(LEN * 0.94, 0.3, deckBeam * 0.94), 0x8a5a34, [0, deckY + 0.15, Z]));
+  addSolid(0, deckY + 0.15, Z, [LEN * 0.94, 0.3, deckBeam * 0.94]);
+
+  // rail along the camera-facing edge: a top bar on posts
+  const railZ = Z + deckBeam / 2 - 0.15;
+  const postCount = 9;
+  for (let i = 0; i < postCount; i++) {
+    const x = -LEN * 0.46 + (i / (postCount - 1)) * LEN * 0.92;
+    parts.push(p(cyl(0.08, 0.08, 1.1, 5), 0x5a3d24, [x, deckY + 0.85, railZ]));
+  }
+  parts.push(p(box(LEN * 0.94, 0.08, 0.08), 0x5a3d24, [0, deckY + 1.35, railZ]));
+
+  // spots along the rail for the crew to line up and watch, plus a second row further back on deck
+  const railSpots = 8;
+  for (let i = 0; i < railSpots; i++) {
+    const x = -LEN * 0.4 + (i / (railSpots - 1)) * LEN * 0.8;
+    tops.push({
+      pos: new THREE.Vector3(x, deckY + 0.3, railZ - 0.7),
+      face: faceAt(x, Z),
+      ground: false,
+      tier: 0,
+    });
+  }
+  const midDeckSpots = 5;
+  for (let i = 0; i < midDeckSpots; i++) {
+    const x = -LEN * 0.34 + (i / (midDeckSpots - 1)) * LEN * 0.68;
+    tops.push({
+      pos: new THREE.Vector3(x, deckY + 0.3, Z - 1.2),
+      face: faceAt(x, Z),
+      ground: false,
+      tier: 0,
+    });
+  }
+
+  // sterncastle: a raised aft deck with the captain's spot
+  const sternX = -LEN / 2 + 3.2;
+  const sternH = 3.4;
+  parts.push(
+    p(new RoundedBoxGeometry(6.2, sternH, deckBeam * 0.56, 2, 0.25), colour(), [
+      sternX,
+      deckY + sternH / 2,
+      Z,
+    ]),
+  );
+  addSolid(sternX, deckY + sternH / 2, Z, [6.2, sternH, deckBeam * 0.56]);
+  tops.push({
+    pos: new THREE.Vector3(sternX, deckY + sternH + 0.3, Z + 0.6),
+    face: faceAt(sternX, Z),
+    ground: false,
+    tier: 1,
+  });
+
+  // bow: a tapered block with a skull figurehead glaring at the play area
+  const bowX = LEN / 2 - 2.6;
+  parts.push(p(new RoundedBoxGeometry(5.2, 2.6, deckBeam * 0.5, 2, 0.3), colour(), [bowX, deckY + 1.3, Z]));
+  addSolid(bowX, deckY + 1.3, Z, [5.2, 2.6, deckBeam * 0.5]);
+  placeAll(parts, skull(rand), bowX + 2.4, deckY + 0.6, Z + deckBeam * 0.25, 0, 1.6);
+
+  // two masts, each with a crow's nest spectators can climb into, and a big sail
+  const mastXs = [-LEN * 0.14, LEN * 0.14];
+  for (const mx of mastXs) {
+    const mastH = 15 + rand() * 3;
+    parts.push(p(cyl(0.32, 0.42, mastH, 7), 0x5a3d24, [mx, deckY + mastH / 2, Z]));
+    const nestY = deckY + mastH * 0.72;
+    parts.push(p(cyl(1.1, 1.1, 0.25, 8), 0x6e4a2c, [mx, nestY, Z]));
+    addSolid(mx, nestY, Z, [1.9, 0.3, 1.9]);
+    for (const dz of [-0.5, 0.5]) {
+      tops.push({
+        pos: new THREE.Vector3(mx, nestY + 0.15, Z + dz),
+        face: faceAt(mx, Z),
+        ground: false,
+        tier: 2,
+      });
+    }
+    parts.push(p(box(4.4, 5, 0.1), 0xece3d2, [mx, deckY + mastH * 0.55, Z + deckBeam * 0.42], [0.08, 0, 0]));
+  }
+
+  return { parts, tops, solids };
+}
+
 function islandProps(
   theme: ThemeId,
   rand: () => number,
@@ -1110,7 +1233,7 @@ export function buildProps(
   seed = 7,
 ): { group: THREE.Group; spots: Spot[]; solids: Solid[]; sails: THREE.Object3D[] } {
   const rand = seeded(THEMES[theme].name.length * 131 + seed);
-  const stands = arena(theme, rand);
+  const stands = theme === 'pirate' ? pirateShip(rand) : arena(theme, rand);
   const island = islandProps(theme, rand, stands.tops, pedestalHalf);
   const parts = [...island.parts, ...distantScenery(theme, rand), ...backdrop(theme, rand)];
   const group = new THREE.Group();
