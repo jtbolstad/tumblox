@@ -26,18 +26,10 @@ import { createGrab, WHITE } from './grab';
 import { createHudPanels, QUALITIES, type Quality } from './hud-panels';
 import { startTranslating } from './i18n';
 import { type Level, loadBundledLevels } from './level';
+import { createLevelRuntime } from './level-runtime';
 import { blockTexture } from './marks';
 import { initMusic, setTrack } from './music';
-import {
-  createParty,
-  endDuelTurn,
-  endJengaTurn,
-  type Party,
-  partyModeFor,
-  playerLabel,
-  topple,
-  totalTurns,
-} from './party';
+import { type Party, partyModeFor } from './party';
 import { createPhysicsStep, randomDir } from './physics-step';
 import { loadProgress, recordResult } from './progress';
 import { buildProps, disposeGroup, type Solid, type Spot } from './props';
@@ -51,9 +43,6 @@ import {
 } from './remote-protocol';
 import { createRemoteSlotPanel } from './remote-ui';
 import {
-  type BlockState,
-  blockScore,
-  type CharacterState,
   characterScore,
   finalScore,
   friendLost,
@@ -76,7 +65,6 @@ import {
 } from './scene';
 import { THEMES, type ThemeId } from './themes';
 import { chargeTier } from './throw';
-import { titleLevel } from './title';
 import { createToolFx } from './tool-fx';
 import { TOOL_IDS, TOOLS, type ToolId } from './tools';
 import { createUi } from './ui';
@@ -97,7 +85,6 @@ const BEAM_SECONDS = 0.18;
 const HOSE_FORCE = 26; // N at the centre of the stream
 const HOSE_RANGE = 22; // m
 const HOSE_SPLASH = 1.1; // m around the hit point that is pushed too
-const INFINITE_TURNS = 999; // Jenga-off has no throw limit
 const QUALITY_SETTINGS: Record<
   Quality,
   { pixelRatio: number; shadowMap: number; extras: boolean; crowd: number }
@@ -450,7 +437,6 @@ let lastMotion = 0;
 let collapsed = false; // a Jenga tower block (never grabbed) was knocked out of place
 let party: Party | null = null; // hot-seat game in progress, null for solo play
 let turnActive = false; // party: the current player has acted and the scene is still resolving
-let turnBaseline = 0; // party duel: block score when the turn started
 let spraying = false; // hose held down
 let beamLeft = 0; // s the laser beam stays visible
 let physicsIdle = true; // everything asleep: world.step is skipped
@@ -460,7 +446,7 @@ const ui = createUi({
   onSelect: (i, players) => {
     if (players > 1) startParty(i, players);
     else startSolo(i);
-    menuReturn = null;
+    forgetMenuReturn();
     ui.hideMenu();
   },
   onRetry: () => restart(),
@@ -518,166 +504,51 @@ const physics = createPhysicsStep({
   },
 });
 
-let menuReturn: { phase: Phase; introLevel: number } | null = null;
-
-function openMenu() {
-  if (phase !== 'menu') menuReturn = { phase, introLevel: cam.introLevel };
-  phase = 'menu';
-  cam.introLevel = -1; // picking a level from the menu flies in again
-  ui.showMenu(levels, loadProgress());
-}
-
-/** Close the level list without picking: back to the title, or to the level (and its result) underneath. */
-function closeMenu() {
-  if (phase !== 'menu') return;
-  const back = menuReturn;
-  menuReturn = null;
-  ui.hideMenu();
-  if (!back || back.phase === 'menu' || back.phase === 'title' || levelIndex === TITLE_INDEX) {
-    showTitle();
-    return;
-  }
-  phase = back.phase;
-  cam.introLevel = back.introLevel;
-  if (phase === 'won' || phase === 'lost') ui.restoreResult();
-}
-
 const TITLE_INDEX = -2; // levelIndex while the title scene is up (not -1, so it gets a fly-in)
-const titleScene = titleLevel();
 
-function showTitle() {
-  party = null;
-  loadLevel(TITLE_INDEX);
-  phase = 'title';
-  ui.showTitle();
-}
-
-function blockStates(): BlockState[] {
-  return blocks.map((b) => ({ type: b.type, status: b.status, multiplier: b.multiplier }));
-}
-
-function totalThrows() {
-  if (!party) return level.throws;
-  return party.mode === 'duel' ? totalTurns(party) : INFINITE_TURNS;
-}
-
-function throwsLeft() {
-  // hose water is spent continuously, so round up: a sliver of water still counts as a second
-  return Math.max(0, Math.ceil(totalThrows() - throwsUsed - 1e-6));
-}
-
-function charStates(): CharacterState[] {
-  return chars.map((c) => ({ role: c.role, status: c.status }));
-}
-
-/** Points so far: fallen blocks, knocked-off rivals and chain bonus. */
-function currentScore() {
-  return blockScore(blockStates()) + characterScore(charStates()) + bonus;
-}
-
-let lastStats = '';
-function refreshStats() {
-  const left = throwsLeft();
-  const score = currentScore();
-  const key = `${left}/${score}`;
-  if (key === lastStats) return;
-  lastStats = key;
-  ui.setStats(left, score);
-}
-
-function startSolo(index: number) {
-  party = null;
-  loadLevel(index);
-}
-
-function startParty(index: number, players: number) {
-  const lvl = levels[index];
-  const mode = partyModeFor(lvl);
-  if (!mode) return startSolo(index);
-  party = createParty(mode, players, lvl.throws);
-  loadLevel(index);
-  announceTurn();
-}
-
-function restart() {
-  if (levelIndex === TITLE_INDEX) showTitle();
-  else if (party) startParty(levelIndex, party.players);
-  else loadLevel(levelIndex);
-}
-
-function refreshParty() {
-  if (!party) {
-    ui.setParty(null);
-    return;
-  }
-  const p = party;
-  ui.setParty(
-    p.scores.map((score, i) => ({
-      name: playerLabel(i),
-      score: p.mode === 'duel' ? score : null,
-      active: i === p.current && !p.winners,
-      out: p.out[i],
-    })),
-  );
-}
-
-function announceTurn() {
-  if (!party) return;
-  turnBaseline = currentScore();
-  ui.toast(`${playerLabel(party.current)}'s turn`);
-  refreshParty();
-}
-
-/** Party: the current player's throw has resolved. Score it and pass the turn. */
-function endPartyTurn() {
-  if (!party) return;
-  turnActive = false;
-  const who = party.current;
-  if (party.mode === 'duel') {
-    const score = currentScore();
-    const gained = score - turnBaseline;
-    turnBaseline = score; // set now: the next player may act before the toast ends
-    endDuelTurn(party, gained);
-    ui.toast(`${playerLabel(who)} ${gained > 0 ? '+' : ''}${gained}`);
-    if (!party.winners) setTimeout(announceTurn, 900);
-  } else {
-    endJengaTurn(party);
-    if (!party.winners) announceTurn();
-  }
-  refreshParty();
-  if (party.winners) finishParty();
-}
-
-/** Party: the Jenga tower fell on the current player's watch. */
-function partyTopple() {
-  if (!party) return;
-  const p = party;
-  const loser = p.current;
-  const rebuild = topple(p);
-  playStinger('lose');
-  refreshParty();
-  if (!rebuild) return finishParty();
-  phase = 'lost'; // freeze the sim until the rebuild
-  ui.toast(`${playerLabel(loser)} toppled it!`);
-  setTimeout(() => {
-    if (party !== p || phase !== 'lost') return; // the player left or restarted meanwhile
-    loadLevel(levelIndex);
-    announceTurn();
-  }, 1600);
-}
-
-function finishParty() {
-  if (!party?.winners) return;
-  phase = 'won';
-  playStinger('win');
-  fireworks.celebrate(30, level.platform.top);
-  const names = party.winners.map(playerLabel).join(' & ');
-  const detail =
-    party.mode === 'duel'
-      ? party.scores.map((s, i) => `${playerLabel(i)} ${s}`).join(' · ')
-      : `${names} is the last one standing${party.winners.length > 1 ? ' (turn limit reached)' : ''}`;
-  ui.showPartyResult(party.winners.length === 1 ? `${names} wins!` : `Tie: ${names}`, detail);
-}
+const levelRuntime = createLevelRuntime({
+  ui,
+  levels,
+  cam,
+  loadLevel,
+  fireworks,
+  TITLE_INDEX,
+  blocks,
+  chars,
+  getLevel: () => level,
+  getLevelIndex: () => levelIndex,
+  getPhase: () => phase,
+  setPhase: (p) => {
+    phase = p;
+  },
+  getParty: () => party,
+  setParty: (p) => {
+    party = p;
+  },
+  getThrowsUsed: () => throwsUsed,
+  getBonus: () => bonus,
+  setTurnActive: (active) => {
+    turnActive = active;
+  },
+});
+const {
+  titleScene,
+  openMenu,
+  closeMenu,
+  forgetMenuReturn,
+  showTitle,
+  blockStates,
+  charStates,
+  throwsLeft,
+  refreshStats,
+  resetStats,
+  startSolo,
+  startParty,
+  restart,
+  refreshParty,
+  endPartyTurn,
+  partyTopple,
+} = levelRuntime;
 
 function clearLevel() {
   for (const b of blocks) if (b.status !== 'removed') world.removeRigidBody(b.body); // removed ones are already gone
@@ -727,7 +598,7 @@ function loadLevel(index: number) {
   forgetLastThrow();
   simTime = 0;
   lastMotion = 0;
-  lastStats = '';
+  resetStats();
   collapsed = false;
   grab.entity = null;
   turnActive = false;
@@ -1261,7 +1132,7 @@ const remoteSlotPanel = createRemoteSlotPanel({
 function remoteCommand(m: RemoteMsg & { t: 'cmd' | 'select' }) {
   if (m.t === 'select') {
     if (m.index >= levels.length) return;
-    menuReturn = null;
+    forgetMenuReturn();
     // several phones connected and the level allows it: picking one from a phone starts a party
     const players = remoteConnected.filter(Boolean).length;
     if (players > 1 && partyModeFor(levels[m.index])) startParty(m.index, players);

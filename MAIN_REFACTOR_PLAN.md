@@ -54,8 +54,23 @@ step, zero behavior change. Tick boxes as steps land.
   and is passed in. The factory runs after `createUi` (it needs `ui`), but `createCrowd` runs
   earlier and takes `getUpIfFallenOver`/`hitReaction`, so the crowd deps forward to
   `characters.*` through closures. The crowd array is passed directly.
-- [ ] 9. **level-runtime.ts** — loadLevel/clearLevel/restart, party flow (startSolo/
-  startParty/endPartyTurn/partyTopple/finishParty/announceTurn/refreshParty).
+- [x] 9. **level-runtime.ts** — scope reduced from the original guess: `loadLevel`/`clearLevel`
+  stay in main.ts, since they build the scene/physics bodies for a level using mesh/material
+  state owned by main.ts's renderer setup (`boxGeo`, `platformMat`, `blockMaterial`,
+  `titleOutlineMat`, `shinyMats`, `zoneMeshes`, `pendingSleep`). Moved as `createLevelRuntime`:
+  menu/title nav (`openMenu`/`closeMenu`/`showTitle`, `menuReturn`, `titleScene`), the score/stat
+  readouts (`blockStates`/`charStates`/`totalThrows`/`throwsLeft`/`currentScore`/`refreshStats`),
+  and the whole party flow (`startSolo`/`startParty`/`restart`/`refreshParty`/`announceTurn`/
+  `endPartyTurn`/`partyTopple`/`finishParty`). `phase`/`party`/`levelIndex`/`level`/`throwsUsed`/
+  `bonus`/`turnActive` stay as `let`s in main.ts — this module reaches them through get/set
+  deps rather than owning them, since `loadLevel`, `stepPhysics`, `finishIfDone` and the remote
+  glue (all staying in main.ts) read and write the same variables directly. `TITLE_INDEX` stays
+  in main.ts too (passed in), since `loadLevel`/`frameCamera`/`startIntro` need it; `titleScene`
+  moves (built from `titleLevel()`) and is returned back. Added `resetStats()` (replaces a bare
+  `lastStats = ''` main.ts used to do inside `loadLevel`) and `forgetMenuReturn()` (replaces a
+  bare `menuReturn = null` two call sites used to do) since that state is now private to the
+  module. Done by Sonnet directly rather than a haiku agent, given how much of main.ts's central
+  state this step touches — see the conversation that led here for why.
 - [x] 10. **remote-ui.ts** — scope reduced from the original guess: only the QR/status
   slot panel (`refresh`/`updateStatus`/`forceRebuild`) moved out, as `createRemoteSlotPanel`.
   `handleRemote`, `remoteCommand` and `updateRemoteState` stay in main.ts — they're wired
@@ -71,9 +86,11 @@ step, zero behavior change. Tick boxes as steps land.
 
 ## Status
 
-Execution handed to a background agent (one fork, all steps, committing as it goes).
-Update this checklist and the line below once it reports back.
-- Last known main.ts line count: 1708 (after step 11; 1769 after step 8; 2152 after step 6; 2491 after step 5; 3081 was the pre-refactor baseline)
+Steps 0-8, 10, 11 executed by background haiku agents (cheap, prescriptive prompts, one
+commit per step). Step 9 done directly instead, given how central the state it touches is.
+Only step 12 (final pass) remains.
+- Last known main.ts line count: 1579 (after step 9; 1708 after step 11; 1769 after step 8;
+  2152 after step 6; 2491 after step 5; 3081 was the pre-refactor baseline)
 - Manual browser smoke test (throw, grab, laser, hose, party mode) still required
   before this is trusted, per CLAUDE.md testing norms — automated gate is tsc+vitest
   only, no UI exercised during the mechanical move.
