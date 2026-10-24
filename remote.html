@@ -34,12 +34,20 @@
       #buttons button { flex: 1; padding: 12px 8px; }
       #picker { position: fixed; inset: 0; z-index: 10; background: #023047; display: flex; flex-direction: column; gap: 10px; padding: max(16px, env(safe-area-inset-top)) 16px max(16px, env(safe-area-inset-bottom)); box-sizing: border-box; }
       #picker[hidden] { display: none; }
-      #picker header { display: flex; justify-content: space-between; align-items: center; }
-      #picker h2 { margin: 0; font-size: 1.3em; }
-      #level-list { overflow-y: auto; display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; align-content: start; padding-bottom: 8px; }
-      #level-list button { text-align: left; padding: 10px 12px; font-weight: 600; background: #1b5a78; box-shadow: 0 3px 0 #0e3a50; display: grid; gap: 2px; }
-      #level-list button.current { outline: 3px solid var(--accent); }
-      #level-list .n { font-size: 1.1em; font-weight: 800; }
+      #picker > header { display: flex; justify-content: space-between; align-items: center; }
+      #picker > header h2 { margin: 0; font-size: 1.3em; }
+      #level-list { overflow-y: auto; display: flex; flex-direction: column; gap: 12px; padding-bottom: 8px; }
+      /* one card per world, in its own sky colours, little isles for its levels (matches the game's own menu) */
+      .world { border-radius: 14px; padding: 10px 12px 14px; background: linear-gradient(to bottom, var(--sky-top), var(--sky-horizon)); flex: none; }
+      .world header { color: var(--title-ink); margin-bottom: 8px; }
+      .world h2 { margin: 0; font-size: 1.1em; }
+      .isles { display: grid; grid-template-columns: repeat(auto-fill, minmax(84px, 1fr)); gap: 10px; }
+      .isle { display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 6px 4px 8px; color: var(--isle-ink); background: var(--ground); border-radius: 14px 14px 32% 32% / 14px 14px 22% 22%; box-shadow: 0 5px 0 var(--earth); min-width: 0; }
+      .isle.current { outline: 3px solid var(--accent); }
+      .isle .thumb { width: 100%; height: auto; aspect-ratio: 120 / 76; border-radius: 8px; display: block; margin-bottom: 2px; }
+      .isle .n { font-size: 1.1em; line-height: 1.1; font-weight: 800; }
+      .isle .name { font-size: 0.72em; font-weight: 600; text-align: center; max-width: 100%; overflow-wrap: anywhere; }
+      .isle .m { min-height: 1.1em; font-size: 0.85em; }
       #hint { text-align: center; font-size: 0.9em; opacity: 0.8; }
     </style>
   </head>

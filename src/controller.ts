@@ -2,8 +2,11 @@
 import '@fontsource-variable/fredoka';
 import Peer from 'peerjs';
 import { startTranslating, tr } from './i18n';
+import { loadBundledLevels } from './level';
 import { aimToScreen, type HostMsg, parseHostMsg, type RemoteMsg, wrapDeg } from './remote-protocol';
+import { THEME_IDS, THEMES } from './themes';
 import { chargeTier, type PointerSample, powerTier, releaseVelocity } from './throw';
+import { levelThumb } from './thumb';
 
 const el = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 const status = el('status');
@@ -20,6 +23,17 @@ const buttons = el('buttons');
 const nextBtn = el<HTMLButtonElement>('next-btn');
 const picker = el('picker');
 const levelList = el('level-list');
+
+// the same static bundle the game page has: its levels line up by index with `levelInfo` from the host
+const bundledLevels = loadBundledLevels();
+const css = (color: number) => `#${color.toString(16).padStart(6, '0')}`;
+/** True for colours dark enough to need white text on them. */
+function isDark(color: number) {
+  const r = (color >> 16) & 255;
+  const g = (color >> 8) & 255;
+  const b = color & 255;
+  return 0.299 * r + 0.587 * g + 0.114 * b < 140;
+}
 
 type State = Extract<HostMsg, { t: 'state' }>;
 let state: State | null = null;
@@ -184,23 +198,47 @@ nextBtn.addEventListener('click', () => sendCmd('next'));
 el('levels-btn').addEventListener('click', () => openPicker());
 el('picker-close').addEventListener('click', () => closePicker());
 
+/** World map, grouped and coloured the same way the game's own level menu is. */
 function openPicker() {
   levelList.replaceChildren(
-    ...levelInfo.map((l, i) => {
-      const b = document.createElement('button');
-      b.type = 'button';
-      b.className = state?.level === i ? 'current' : '';
-      const n = document.createElement('span');
-      n.className = 'n';
-      n.textContent = `${i + 1}${l.medal ? ` ${MEDAL[l.medal]}` : ''}`;
-      const name = document.createElement('span');
-      name.textContent = tr(l.name);
-      b.append(n, name);
-      b.addEventListener('click', () => {
-        send({ t: 'select', index: i });
-        closePicker();
-      });
-      return b;
+    ...THEME_IDS.flatMap((themeId) => {
+      const entries = levelInfo.flatMap((l, i) => (l.theme === themeId ? [{ l, i }] : []));
+      if (entries.length === 0) return [];
+      const t = THEMES[themeId];
+      const world = document.createElement('section');
+      world.className = 'world';
+      world.style.setProperty('--sky-top', css(t.sky.top));
+      world.style.setProperty('--sky-horizon', css(t.sky.horizon));
+      world.style.setProperty('--ground', css(t.ground));
+      world.style.setProperty('--earth', css(t.earth));
+      world.style.setProperty('--isle-ink', isDark(t.ground) ? '#fff' : '#023047');
+      world.style.setProperty('--title-ink', isDark(t.sky.top) ? '#fff' : '#023047');
+      const head = document.createElement('header');
+      head.append(Object.assign(document.createElement('h2'), { textContent: tr(t.name) }));
+      const isles = document.createElement('div');
+      isles.className = 'isles';
+      for (const { l, i } of entries) {
+        const isle = document.createElement('button');
+        isle.type = 'button';
+        isle.className = state?.level === i ? 'isle current' : 'isle';
+        const bundled = bundledLevels[i];
+        isle.append(
+          ...(bundled ? [levelThumb(bundled)] : []),
+          Object.assign(document.createElement('span'), { className: 'n', textContent: String(i + 1) }),
+          Object.assign(document.createElement('span'), { className: 'name', textContent: tr(l.name) }),
+          Object.assign(document.createElement('span'), {
+            className: 'm',
+            textContent: l.medal ? MEDAL[l.medal] : '',
+          }),
+        );
+        isle.addEventListener('click', () => {
+          send({ t: 'select', index: i });
+          closePicker();
+        });
+        isles.append(isle);
+      }
+      world.append(head, isles);
+      return [world];
     }),
   );
   picker.hidden = false;
