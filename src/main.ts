@@ -277,6 +277,7 @@ function readQuality(): Quality {
   } catch {
     // storage blocked: fall through to the default
   }
+  if (isTv) return 'low'; // TV GPUs are weak and the box can't easily be swapped out
   return matchMedia('(pointer: coarse)').matches ? 'medium' : 'high'; // phones start lighter
 }
 
