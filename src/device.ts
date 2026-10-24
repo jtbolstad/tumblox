@@ -6,7 +6,13 @@ const STORAGE_KEY = 'blox.tv.v1';
  * paired with a manual override below rather than trusted alone.
  */
 function detectTv(): boolean {
-  return /Tizen|Web0S|WebOS|SmartTV|GoogleTV|AFT[A-Z]?|BRAVIA|HbbTV|VIDAA|CrKey/i.test(navigator.userAgent);
+  if (/Tizen|Web0S|WebOS|SmartTV|GoogleTV|AFT[A-Z]?|BRAVIA|HbbTV|VIDAA|CrKey/i.test(navigator.userAgent)) {
+    return true;
+  }
+  // Chrome's User-Agent reduction strips the distinguishing tokens above from many generic
+  // Android TV boxes and Google Cast devices, leaving nothing in the UA to match. Fall back to a
+  // trait only a remote-only device has: no pointing device at all (not even a coarse touchscreen).
+  return matchMedia('(pointer: none)').matches;
 }
 
 /** `?tv=1` / `?tv=0` forces it one way and remembers the choice; otherwise a saved choice wins. */
