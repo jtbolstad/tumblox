@@ -1,16 +1,32 @@
 import basicSsl from '@vitejs/plugin-basic-ssl';
 import { defineConfig, type Plugin } from 'vite';
 
-/** Stamp the game page with the time it was built, as an HTML comment (handy to tell deploys apart). */
+/** Stamp the game page with the time it was built, as an HTML comment (handy to tell deploys apart),
+ *  and show it for real on the launch page, in Norwegian local time. */
 function buildTime(): Plugin {
-  const stamp = new Date().toISOString();
+  const now = new Date();
+  const isoStamp = now.toISOString();
+  const nbStamp = new Intl.DateTimeFormat('nb-NO', {
+    timeZone: 'Europe/Oslo',
+    dateStyle: 'medium',
+    timeStyle: 'short',
+  }).format(now);
   return {
     name: 'build-time',
     apply: 'build',
     transformIndexHtml: {
       order: 'post',
       handler(html, ctx) {
-        return ctx.filename.endsWith('index.html') ? html.replace(/^(<!doctype html>)/i, `$1\n<!-- built ${stamp} -->`) : html;
+        if (ctx.filename.endsWith('index.html')) {
+          return html.replace(/^(<!doctype html>)/i, `$1\n<!-- built ${isoStamp} -->`);
+        }
+        if (ctx.filename.endsWith('about.html')) {
+          return html.replace(
+            '</footer>',
+            `  <p class="sub">Built ${nbStamp} (Norway time)</p>\n      </footer>`,
+          );
+        }
+        return html;
       },
     },
   };
@@ -31,7 +47,12 @@ function lanOrigin(): Plugin {
       });
     },
     transformIndexHtml(html) {
-      return origin ? html.replace('</head>', `<script>window.__LAN_ORIGIN__ = ${JSON.stringify(origin)};</script></head>`) : html;
+      return origin
+        ? html.replace(
+            '</head>',
+            `<script>window.__LAN_ORIGIN__ = ${JSON.stringify(origin)};</script></head>`,
+          )
+        : html;
     },
   };
 }
