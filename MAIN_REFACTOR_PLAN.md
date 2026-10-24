@@ -38,8 +38,12 @@ step, zero behavior change. Tick boxes as steps land.
   logic, get-up-if-fallen-over. (`characters.ts` stays data/specs only.)
 - [ ] 9. **level-runtime.ts** — loadLevel/clearLevel/restart, party flow (startSolo/
   startParty/endPartyTurn/partyTopple/finishParty/announceTurn/refreshParty).
-- [ ] 10. **remote-ui.ts** — slot panel refresh, handleRemote, updateRemoteState glue
-  (remote.ts/remote-protocol.ts stay as-is; this is just main-side wiring).
+- [x] 10. **remote-ui.ts** — scope reduced from the original guess: only the QR/status
+  slot panel (`refresh`/`updateStatus`/`forceRebuild`) moved out, as `createRemoteSlotPanel`.
+  `handleRemote`, `remoteCommand` and `updateRemoteState` stay in main.ts — they're wired
+  into party/phase/grab/spraying/launch state deeply enough that extracting them would
+  mean threading ~15 getters/setters for no real decoupling, just code motion. Done
+  alongside the TV-mode work (see `TV_MODE_PLAN.md`), which touched this same area anyway.
 - [ ] 11. **hud-panels.ts** — mute/sound/lang/quality button wiring.
 - [ ] 12. Final pass: confirm what's left in main.ts is bootstrap only (renderer/scene/
   world setup, entity arrays, wiring the extracted modules, the frame/tick loop).

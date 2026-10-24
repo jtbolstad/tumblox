@@ -28,6 +28,7 @@ import { levelBrief } from './brief';
 import { createCameraRig } from './camera-runtime';
 import { CHARACTERS, CharacterRig, moodFor } from './characters';
 import { createCrowd } from './crowd';
+import { isTv } from './device';
 import {
   type BallEntity,
   type Blaster,
@@ -69,7 +70,7 @@ import {
 import { loadProgress, recordResult } from './progress';
 import { buildProps, disposeGroup, type Solid, type Spot } from './props';
 import { missFor, quipFor } from './quips';
-import { drawRemoteQr, type RemoteHost, startRemoteHost } from './remote';
+import { type RemoteHost, startRemoteHost } from './remote';
 import {
   aimToScreen,
   type HostMsg,
@@ -77,6 +78,7 @@ import {
   REMOTE_SPEED_SCALE,
   type RemoteMsg,
 } from './remote-protocol';
+import { createRemoteSlotPanel } from './remote-ui';
 import {
   type BlockState,
   blockScore,
@@ -1550,7 +1552,6 @@ const remoteSlotsEl = document.getElementById('remote-slots') as HTMLElement;
 let remoteHost: RemoteHost | null = null;
 let lastRemoteCheck = 0;
 const remoteConnected: boolean[] = Array(MAX_REMOTE_SLOTS).fill(false);
-let shownRemoteSlots = 0; // how many slot panels are currently built, so we rebuild only when it changes
 
 /** How many phones can usefully connect right now: one per hot-seat player, or just one for solo play. */
 function activeSlotCount() {
@@ -1562,53 +1563,22 @@ function activeRemoteSlot() {
   return party ? party.current : 0;
 }
 
-/** Rebuild the QR panels to match the current player count (a party starting, ending, or changing size). */
-function refreshRemoteSlots() {
-  if (!remoteHost) return;
-  const count = activeSlotCount();
-  if (count === shownRemoteSlots) return;
-  shownRemoteSlots = count;
-  const host = remoteHost;
-  remoteSlotsEl.replaceChildren(
-    ...Array.from({ length: count }, (_, slot) => {
-      const box = document.createElement('div');
-      box.className = 'remote-slot';
-      const label = document.createElement('div');
-      label.className = 'slot-label';
-      label.textContent = count > 1 ? playerLabel(slot) : 'Scan with your phone';
-      const canvas = document.createElement('canvas');
-      canvas.width = 220;
-      canvas.height = 220;
-      drawRemoteQr(canvas, host.urlFor(slot));
-      const status = document.createElement('div');
-      status.className = 'slot-status';
-      box.append(label, canvas, status);
-      return box;
-    }),
-  );
-  updateRemoteSlotStatus();
-}
-
-function updateRemoteSlotStatus() {
-  const boxes = remoteSlotsEl.querySelectorAll<HTMLElement>('.remote-slot');
-  boxes.forEach((box, slot) => {
-    const status = box.querySelector('.slot-status');
-    if (!status) return;
-    status.textContent =
-      remoteHost?.unreachable && !remoteConnected[slot]
-        ? 'A phone cannot open localhost. Start the game with pnpm dev:phone and open the network address.'
-        : remoteConnected[slot]
-          ? 'Connected'
-          : 'Waiting for a phone…';
-  });
-}
+const remoteSlotPanel = createRemoteSlotPanel({
+  remoteSlotsEl,
+  activeSlotCount,
+  getHost: () => remoteHost,
+  remoteConnected,
+});
 
 /** Buttons on the phone: the same actions as the on-screen ones. Any connected phone may use these. */
 function remoteCommand(m: RemoteMsg & { t: 'cmd' | 'select' }) {
   if (m.t === 'select') {
     if (m.index >= levels.length) return;
     menuReturn = null;
-    startSolo(m.index);
+    // several phones connected and the level allows it: picking one from a phone starts a party
+    const players = remoteConnected.filter(Boolean).length;
+    if (players > 1 && partyModeFor(levels[m.index])) startParty(m.index, players);
+    else startSolo(m.index);
     ui.hideMenu();
     return;
   }
@@ -1624,7 +1594,7 @@ let remoteLevelsSent = '';
 /** Keep every connected phone's buttons in step with the game (checked a few times a second). */
 function updateRemoteState() {
   if (!remoteHost) return;
-  if (!remotePanel.hidden) refreshRemoteSlots();
+  if (!remotePanel.hidden) remoteSlotPanel.refresh();
   if (!remoteConnected.some(Boolean)) return;
   const current = levelIndex >= 0 ? level : null;
   const state: HostMsg = {
@@ -1709,23 +1679,33 @@ function handleRemote(slot: number, m: Exclude<RemoteMsg, { t: 'identify' }>) {
   }
 }
 
-remoteBtn.addEventListener('click', (ev) => {
-  ev.stopPropagation();
-  remotePanel.hidden = !remotePanel.hidden;
-  remoteBtn.setAttribute('aria-expanded', String(!remotePanel.hidden));
-  if (remotePanel.hidden) return;
-  // the connection is only opened once someone asks for the remote
+/** Show the QR panel and open the connection the first time it's needed. */
+function openRemotePanel() {
+  remotePanel.hidden = false;
+  remoteBtn.setAttribute('aria-expanded', 'true');
   if (!remoteHost) {
     remoteHost = startRemoteHost(handleRemote, (slot, status) => {
       remoteConnected[slot] = status === 'connected';
       remoteSent = remoteLevelsSent = ''; // a reconnecting phone needs everything again
-      updateRemoteSlotStatus();
+      remoteSlotPanel.updateStatus();
     });
   }
-  shownRemoteSlots = 0; // force a rebuild so the panel shows up to date QR codes and status
-  refreshRemoteSlots();
+  remoteSlotPanel.forceRebuild(); // fresh QR codes and status, in case this isn't the first time
+  remoteSlotPanel.refresh();
+}
+
+remoteBtn.addEventListener('click', (ev) => {
+  ev.stopPropagation();
+  if (!remotePanel.hidden) {
+    remotePanel.hidden = true;
+    remoteBtn.setAttribute('aria-expanded', 'false');
+    return;
+  }
+  openRemotePanel();
 });
 remotePanel.addEventListener('click', (ev) => ev.stopPropagation());
+// no keyboard/mouse on a TV: the QR goes up by itself, instead of waiting for a tap on remoteBtn
+if (isTv) openRemotePanel();
 
 const muteBtn = document.getElementById('mute-btn') as HTMLElement;
 function showMute() {
