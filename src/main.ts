@@ -93,6 +93,8 @@ import {
 import { THEMES, type ThemeId } from './themes';
 import { chargeTier, type PointerSample, powerTier, releaseVelocity } from './throw';
 import { lang, setLang, startTranslating } from './i18n';
+import { startRemoteHost, type RemoteHost } from './remote';
+import { aimToScreen, REMOTE_SPEED_SCALE, type RemoteMsg } from './remote-protocol';
 import { missFor, quipFor } from './quips';
 import { titleLevel } from './title';
 import { TOOL_IDS, TOOLS, type ToolId } from './tools';
@@ -1911,6 +1913,69 @@ function applyGrabForce() {
   e.body.applyImpulseAtPoint(grabAccel.multiplyScalar(e.body.mass() * STEP), grabPoint, true);
 }
 
+// ---------- phone remote: tilt aims, a swipe on the phone throws ----------
+const remoteBtn = document.getElementById('remote-btn') as HTMLElement;
+const remotePanel = document.getElementById('remote-panel') as HTMLElement;
+const remoteStatus = document.getElementById('remote-status') as HTMLElement;
+const remoteUrlText = document.getElementById('remote-url') as HTMLElement;
+let remoteHost: RemoteHost | null = null;
+
+function handleRemote(m: RemoteMsg) {
+  if (introT < 1) {
+    if (m.t === 'down') skipIntro();
+    return;
+  }
+  if (m.t === 'aim') {
+    const at = aimToScreen(m.yaw, m.pitch, innerWidth, innerHeight);
+    aim.x = at.x;
+    aim.y = at.y;
+    aim.visible = true;
+    return;
+  }
+  if (m.t === 'down') {
+    if (!canThrow()) return;
+    if (isGrabTool()) beginGrab(aim.x, aim.y);
+    else if (isHoseTool()) {
+      spraying = true;
+      ui.hideBanner();
+    }
+    return;
+  }
+  // the finger came up: stop spraying, let go, or throw with the swipe's speed
+  if (spraying) {
+    spraying = false;
+    beam.visible = false;
+  } else if (grab.entity) {
+    grab.entity = null;
+  } else if (!isGrabTool() && !isHoseTool()) {
+    launch(aim.x, aim.y, m.speed * REMOTE_SPEED_SCALE);
+  }
+}
+
+remoteBtn.addEventListener('click', (ev) => {
+  ev.stopPropagation();
+  remotePanel.hidden = !remotePanel.hidden;
+  remoteBtn.setAttribute('aria-expanded', String(!remotePanel.hidden));
+  if (remotePanel.hidden || remoteHost) return;
+  // the connection is only opened once someone asks for the remote
+  remoteHost = startRemoteHost(
+    document.getElementById('remote-qr') as HTMLCanvasElement,
+    handleRemote,
+    (status) => {
+      remoteUrlText.textContent = remoteHost?.url ?? '';
+      remoteStatus.textContent =
+        remoteHost?.unreachable && status !== 'connected'
+          ? 'A phone cannot open localhost. Start the game with pnpm dev:phone and open the network address.'
+          : status === 'connected'
+          ? 'Phone connected'
+          : status === 'waiting'
+            ? 'Waiting for a phone…'
+            : 'Could not reach the connection service';
+    },
+  );
+});
+remotePanel.addEventListener('click', (ev) => ev.stopPropagation());
+
 const muteBtn = document.getElementById('mute-btn') as HTMLElement;
 function showMute() {
   muteBtn.textContent = isMuted() ? '🔇' : '🔊';
@@ -2823,6 +2888,7 @@ requestAnimationFrame(frame);
   step: (n: number) => {
     for (let i = 0; i < n; i++) stepPhysics();
   },
+  remoteUrl: () => remoteHost?.url ?? null,
   awake: () =>
     blocks.filter((e) => e.status !== 'removed' && BLOCKS[e.type].mobile && !e.body.isSleeping()).length,
   launch,

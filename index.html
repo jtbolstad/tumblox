@@ -93,7 +93,7 @@
       #title .bottom { margin-bottom: 0.5vh; display: flex; flex-direction: column; align-items: center; gap: 10px; }
       #title button { pointer-events: auto; font-size: 2.4em; padding: 20px 72px; border-radius: 22px; box-shadow: 0 7px 0 #c96a00; }
       #title .try { font-size: 0.9em; color: #fff; opacity: 0.85; text-shadow: 0 2px 6px rgba(0, 0, 0, 0.7); }
-      body.on-title #hud > :not(#mute-btn):not(#sound-btn):not(#quality-btn):not(#lang-btn) { display: none; }
+      body.on-title #hud > :not(#mute-btn):not(#sound-btn):not(#quality-btn):not(#lang-btn):not(#remote-btn) { display: none; }
       .drop { animation: medal-drop 0.9s cubic-bezier(0.3, 1.6, 0.5, 1) both; }
       @keyframes medal-drop {
         0% { opacity: 0; transform: translateY(-120px) rotate(-30deg) scale(0.6); }
@@ -104,6 +104,11 @@
       .about-link { align-self: center; color: var(--ink); font-weight: 600; }
       #sound-panel { position: fixed; top: 52px; left: 8px; z-index: 5; display: grid; gap: 8px; background: var(--panel); border-radius: 12px; padding: 12px 14px; font-weight: 600; box-shadow: 0 6px 16px rgba(2, 48, 71, 0.25); }
       #sound-panel[hidden] { display: none; }
+      #remote-panel { position: fixed; top: 52px; left: 8px; z-index: 5; display: grid; justify-items: center; gap: 8px; width: 250px; background: var(--panel); border-radius: 12px; padding: 14px; font-weight: 600; text-align: center; box-shadow: 0 6px 16px rgba(2, 48, 71, 0.25); }
+      #remote-panel[hidden] { display: none; }
+      #remote-panel h3 { margin: 0; }
+      #remote-qr { border-radius: 8px; background: #fff; }
+      #remote-panel .small { font-size: 0.8em; font-weight: 400; opacity: 0.8; margin: 0; }
       #sound-panel label { display: grid; grid-template-columns: 4.5em 1fr; align-items: center; gap: 10px; }
       #sound-panel input { width: 150px; accent-color: var(--accent); }
       #banner { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); width: min(820px, calc(100% - 32px)); box-sizing: border-box; text-align: center; background: var(--panel); border-radius: 28px; padding: 28px 36px 32px; font-size: 1.35em; box-shadow: 0 8px 24px rgba(2, 48, 71, 0.25); pointer-events: none; animation: banner-in 0.5s cubic-bezier(0.3, 1.5, 0.5, 1) both; }
@@ -126,6 +131,7 @@
       <button type="button" id="mute-btn" class="secondary" aria-label="Toggle sound">🔊</button>
       <button type="button" id="sound-btn" class="secondary" aria-label="Sound settings" aria-expanded="false" aria-controls="sound-panel">🎚</button>
       <button type="button" id="quality-btn" class="secondary" aria-label="Graphics quality">High</button>
+      <button type="button" id="remote-btn" class="secondary" aria-label="Phone remote" aria-expanded="false" aria-controls="remote-panel">📱</button>
       <button type="button" id="lang-btn" class="secondary" aria-label="Language">NO</button>
       <span id="level-name"></span>
       <span><span id="throws-label">Throws</span>: <span id="throws">0</span></span>
@@ -168,6 +174,13 @@
       <label>Music <input type="range" min="0" max="100" data-channel="music" /></label>
       <label>Effects <input type="range" min="0" max="100" data-channel="effects" /></label>
       <label>Voices <input type="range" min="0" max="100" data-channel="voices" /></label>
+    </div>
+    <div id="remote-panel" hidden>
+      <h3>Phone remote</h3>
+      <canvas id="remote-qr" width="220" height="220"></canvas>
+      <div id="remote-status">Scan with your phone</div>
+      <p class="small" id="remote-url" style="word-break: break-all"></p>
+      <p class="small">Hold the phone like a wand and point at the screen to aim. Swipe up on the phone to throw: a faster swipe throws harder.</p>
     </div>
     <div id="banner" role="status" aria-live="polite" hidden></div>
     <div id="toast" role="status" aria-live="polite"></div>
