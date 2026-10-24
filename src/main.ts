@@ -6,16 +6,11 @@ import { createAimInput, createAimVisuals, MIN_CHARGE_SECONDS, TAP_SPEED_THRESHO
 import {
   type Channel,
   getVolume,
-  type ImpactKind,
   isMuted,
-  playBoom,
   playCrowd,
-  playImpact,
   playLaser,
-  playNote,
   playScore,
   playStinger,
-  playVanish,
   playVoice,
   setAmbience,
   setMuted,
@@ -31,7 +26,6 @@ import { createCrowd } from './crowd';
 import { isTv } from './device';
 import {
   type BallEntity,
-  type Blaster,
   type BlockEntity,
   type CharacterEntity,
   capture,
@@ -46,7 +40,7 @@ import { createGrab, WHITE } from './grab';
 import { lang, setLang, startTranslating } from './i18n';
 import { type Level, loadBundledLevels } from './level';
 import { blockTexture } from './marks';
-import { exciteMusic, initMusic, musicBeat, setTrack } from './music';
+import { initMusic, musicBeat, setTrack } from './music';
 import {
   createParty,
   endDuelTurn,
@@ -57,6 +51,7 @@ import {
   topple,
   totalTurns,
 } from './party';
+import { createPhysicsStep, randomDir } from './physics-step';
 import { loadProgress, recordResult } from './progress';
 import { buildProps, disposeGroup, type Solid, type Spot } from './props';
 import { missFor, quipFor } from './quips';
@@ -72,9 +67,7 @@ import { createRemoteSlotPanel } from './remote-ui';
 import {
   type BlockState,
   blockScore,
-  CHAIN_WINDOW,
   type CharacterState,
-  chainBonus,
   characterScore,
   finalScore,
   friendLost,
@@ -107,14 +100,7 @@ const MAX_STEPS_PER_FRAME = 5;
 const MAX_BALLS = 12;
 const BALL_FLIGHT_SECONDS = 6; // a ball counts as "in motion" for this long after launch
 const FALL_MARGIN = 0.3; // a block is fallen once its centre drops this far below the platform top
-const BLAST_RADIUS = 3.2;
-const BLAST_DELTA_V = 9; // m/s at the centre of an explosion
-const CHAIN_DELAY = 0.15; // s between a blast and the bombs it sets off
-const HIT_COOLDOWN = 0.2; // s before the same multi-hit block can lose another hit
-const BOMB_BALL_TRIGGER_SPEED = 3; // m/s
 const SLOWMO_SCALE = 0.4;
-const FIREWORK_LAUNCH_SPEED = 14; // m/s upward
-const FIREWORK_FUSE = 0.7; // s from launch to burst
 const SKY_HEIGHT = 25; // m above the platform at which a floating cloud block counts as gone
 const JINGLE_NOTES = [262, 294, 330, 392, 440, 523]; // C major pentatonic-ish, Hz
 const PULL_DISTANCE = 2.6; // m a grabbed block must travel from its start to count as pulled out
@@ -138,8 +124,6 @@ const QUALITY_SETTINGS: Record<
   high: { pixelRatio: 2, shadowMap: 2048, extras: true, crowd: 16 },
 };
 const SPARKLE_INTERVAL = 0.07; // s between gem glints
-const DUST_SPEED = 4; // m/s impact that kicks up dust
-const SQUASH_SPEED = 4; // m/s ball hit that squashes the block
 const SQUASH_SECONDS = 0.18;
 const TRAIL_SPEED = 6; // m/s above which balls leave a trail
 const SLOWMO_PUSH = 0.18; // share of the camera distance the view pushes in during slow-mo
@@ -482,8 +466,6 @@ let phase: Phase = 'menu';
 let throwsUsed = 0;
 let simTime = 0;
 let lastMotion = 0;
-const pendingBlasts: { entity: Blaster; at: number }[] = [];
-const pendingLaunches: { entity: BlockEntity; at: number }[] = []; // fireworks waiting to lift off
 let collapsed = false; // a Jenga tower block (never grabbed) was knocked out of place
 let party: Party | null = null; // hot-seat game in progress, null for solo play
 let turnActive = false; // party: the current player has acted and the scene is still resolving
@@ -492,8 +474,6 @@ let spraying = false; // hose held down
 let beamLeft = 0; // s the laser beam stays visible
 let physicsIdle = true; // everything asleep: world.step is skipped
 let bonus = 0; // chain-reaction points this attempt
-let chainLength = 0;
-let lastBlastAt = Number.NEGATIVE_INFINITY;
 
 const ui = createUi({
   onSelect: (i, players) => {
@@ -507,6 +487,35 @@ const ui = createUi({
   onOpenMenu: () => openMenu(),
   onCloseMenu: () => closeMenu(),
   onTitle: () => showTitle(),
+});
+
+const physics = createPhysicsStep({
+  world,
+  events,
+  colliderOwner,
+  blocks,
+  balls,
+  chars,
+  jingleNotes: JINGLE_NOTES,
+  getSimTime: () => simTime,
+  getFrameNow: () => lastFrameAt,
+  getExtras: () => QUALITY_SETTINGS[quality].extras,
+  particles,
+  smoke,
+  glow,
+  shockwaves,
+  debris,
+  shake,
+  ui,
+  crowdCheer,
+  bonk,
+  isSpectator,
+  hitReaction,
+  removeBlock,
+  removeBallBody,
+  addBonus: (gained: number) => {
+    bonus += gained;
+  },
 });
 
 let menuReturn: { phase: Phase; introLevel: number } | null = null;
@@ -688,8 +697,7 @@ function clearLevel() {
   }
   chars.length = 0;
   colliderOwner.clear();
-  pendingBlasts.length = 0;
-  pendingLaunches.length = 0;
+  physics.clearPending();
   if (platformCollider) world.removeCollider(platformCollider, false);
   if (platformMesh) {
     scene.remove(platformMesh);
@@ -725,8 +733,7 @@ function loadLevel(index: number) {
   turnActive = false;
   spraying = false;
   bonus = 0;
-  chainLength = 0;
-  lastBlastAt = Number.NEGATIVE_INFINITY;
+  physics.resetChain();
   beamLeft = 0;
   beam.visible = false;
   phase = 'playing';
@@ -1005,221 +1012,6 @@ function removeBlock(e: BlockEntity) {
   e.mesh.instanceMatrix.needsUpdate = true;
 }
 
-function scheduleBlast(e: Blaster, delay: number) {
-  if (e.exploding || ('status' in e && e.status === 'removed')) return;
-  e.exploding = true;
-  pendingBlasts.push({ entity: e, at: simTime + delay });
-}
-
-/** Launch a fireworks block upward; it bursts after the fuse. */
-function ignite(e: BlockEntity, delay = 0) {
-  if (e.exploding || e.status === 'removed') return;
-  pendingLaunches.push({ entity: e, at: simTime + delay });
-  scheduleBlast(e, delay + FIREWORK_FUSE);
-}
-
-const blastCenter = new THREE.Vector3();
-const blastDir = new THREE.Vector3();
-let slowUntil = 0; // performance.now() time until which the sim runs in slow motion
-const puffVel = new THREE.Vector3();
-const puffPos = new THREE.Vector3();
-
-function randomDir(out: THREE.Vector3) {
-  return out.set(Math.random() - 0.5, Math.random() - 0.5, Math.random() - 0.5).normalize();
-}
-
-/** Flash, shockwave, smoke and chunky debris: the look of one blast. */
-function blastEffects(at: THREE.Vector3, color: number) {
-  const extras = QUALITY_SETTINGS[quality].extras;
-  glow.emit(at, { color: 0xfff1c1, size: [1.5, BLAST_RADIUS * 2.2], life: 0.18, alpha: 1 });
-  glow.emit(at, { color: 0xffa94d, size: [1, BLAST_RADIUS * 1.6], life: 0.35, alpha: 0.9 });
-  shockwaves.spawn(at, BLAST_RADIUS * 1.2);
-  const puffs = extras ? 10 : 4;
-  for (let i = 0; i < puffs; i++) {
-    puffPos.copy(at).addScaledVector(randomDir(puffVel), 0.6);
-    randomDir(puffVel).multiplyScalar(3).y += 1.5;
-    smoke.emit(puffPos, {
-      color: i % 2 === 0 ? 0x8d8d8d : 0x5c5c5c,
-      size: [1, 2.6 + Math.random()],
-      life: 1.1 + Math.random() * 0.6,
-      alpha: 0.7,
-      velocity: puffVel,
-    });
-  }
-  debris.burst(at, [color, 0x3a3a3a, 0xffa94d], extras ? 16 : 8, 8);
-  particles.burst(at, 0xffd166, 24, 9);
-}
-
-/** Count chained blasts; from the third on, award a bonus, call it out and slow time so it reads. */
-function countChain() {
-  chainLength = simTime - lastBlastAt <= CHAIN_WINDOW ? chainLength + 1 : 1;
-  lastBlastAt = simTime;
-  const gained = chainBonus(chainLength);
-  if (gained === 0) return;
-  bonus += gained;
-  exciteMusic();
-  crowdCheer(2.5);
-  ui.callout(`Chain ×${chainLength}!`, `+${gained}`);
-  slowUntil = lastFrameAt + 1000;
-}
-
-function detonate(source: Blaster) {
-  blastCenter.copy(source.currPos);
-  blastEffects(blastCenter, 'type' in source ? BLOCKS[source.type].color : TOOLS[source.tool].color);
-  countChain();
-  shake.kick(0.35 + 0.05 * Math.min(chainLength, 6));
-  playBoom();
-  if ('type' in source) {
-    removeBlock(source);
-  } else {
-    const i = balls.indexOf(source);
-    if (i >= 0) balls.splice(i, 1);
-    removeBallBody(source);
-  }
-  const targets: Owner[] = [...blocks, ...balls, ...chars];
-  for (const t of targets) {
-    if (t === source || ('status' in t && t.status === 'removed')) continue;
-    if ('type' in t && !BLOCKS[t.type].mobile) continue;
-    blastDir.copy(t.currPos).sub(blastCenter);
-    const d = blastDir.length();
-    if (d > BLAST_RADIUS) continue;
-    if ('type' in t) {
-      const behaviour = BLOCKS[t.type].behaviour;
-      if (behaviour === 'explode') scheduleBlast(t, CHAIN_DELAY);
-      else if (behaviour === 'fireworks') ignite(t, CHAIN_DELAY);
-    }
-    const falloff = 1 - d / BLAST_RADIUS;
-    blastDir.y += 0.35; // blasts lift as well as push
-    blastDir.normalize().multiplyScalar(BLAST_DELTA_V * falloff * t.body.mass());
-    t.body.applyImpulse(blastDir, true);
-  }
-}
-
-function bodySpeed(handle: number): number {
-  const parent = world.getCollider(handle)?.parent();
-  if (!parent) return 0;
-  const v = parent.linvel();
-  return Math.hypot(v.x, v.y, v.z);
-}
-
-const IMPACT_BY_TYPE: Partial<Record<BlockType, ImpactKind>> = {
-  wood: 'wood',
-  steel: 'metal',
-  gem: 'glass',
-  ice: 'glass',
-};
-
-function impactKind(a: Owner | undefined, b: Owner | undefined): ImpactKind {
-  for (const e of [a, b])
-    if (e && 'type' in e && IMPACT_BY_TYPE[e.type]) return IMPACT_BY_TYPE[e.type] as ImpactKind;
-  return 'thud';
-}
-
-/** Run a block's behaviour for an impact of `speed` m/s; `a` and `b` are the two colliding entities. */
-function triggerBlock(
-  e: BlockEntity,
-  speed: number,
-  a: Owner | undefined,
-  b: Owner | undefined,
-  toVanish: Set<BlockEntity>,
-) {
-  const def = BLOCKS[e.type];
-  if (speed < (def.triggerSpeed ?? 0)) return;
-  if (def.behaviour === 'explode') {
-    scheduleBlast(e, 0);
-  } else if (def.behaviour === 'chemical') {
-    // only a chemical-on-chemical touch sets it off
-    if (a && b && 'type' in a && 'type' in b && a.type === 'chemical' && b.type === 'chemical') {
-      scheduleBlast(e, 0);
-    }
-  } else if (def.behaviour === 'fireworks') {
-    ignite(e);
-  } else if (def.behaviour === 'float') {
-    e.body.setGravityScale(def.gravityScale ?? -0.25, true); // stays put until something disturbs it
-  } else if (def.behaviour === 'jingle' && simTime - e.lastHit > HIT_COOLDOWN) {
-    e.lastHit = simTime;
-    playNote(JINGLE_NOTES[e.note]);
-  } else if (def.behaviour === 'vanish' && simTime - e.lastHit > HIT_COOLDOWN) {
-    e.lastHit = simTime;
-    e.hitsLeft--;
-    if (e.hitsLeft <= 0) toVanish.add(e);
-  }
-}
-
-function vanishAll(toVanish: Set<BlockEntity>) {
-  for (const e of toVanish) {
-    for (let i = 0; i < 5; i++) {
-      puffPos.copy(e.currPos).addScaledVector(randomDir(puffVel), 0.3);
-      smoke.emit(puffPos, {
-        color: i % 2 === 0 ? BLOCKS[e.type].color : 0xffffff,
-        size: [0.6, 1.8],
-        life: 0.5,
-        alpha: 0.8,
-        velocity: randomDir(puffVel).multiplyScalar(2),
-      });
-    }
-    particles.burst(e.currPos, BLOCKS[e.type].color, 8, 4);
-    playVanish();
-    removeBlock(e);
-  }
-}
-
-let lastDust = 0;
-
-/** Dust where a block lands hard, and a quick squash on blocks a ball smacks into. */
-function impactEffects(a: Owner | undefined, b: Owner | undefined, speed: number) {
-  const ballHit = (a && 'tool' in a) || (b && 'tool' in b);
-  for (const e of [a, b]) {
-    if (!e || !('type' in e)) continue;
-    if (ballHit && speed >= SQUASH_SPEED) e.squash = 1;
-  }
-  const now = performance.now();
-  if (now - lastDust < 60) return; // a collapse fires dozens of contacts at once
-  lastDust = now;
-  const lander = [a, b].find((e): e is BlockEntity => !!e && 'type' in e);
-  if (!lander) return;
-  puffPos.copy(lander.currPos);
-  puffPos.y -= lander.size.y / 2;
-  for (let i = 0; i < 3; i++) {
-    smoke.emit(puffPos, {
-      color: 0xe3d5b8,
-      size: [0.4, 1.2 + Math.min(speed / 10, 1)],
-      life: 0.6,
-      alpha: 0.55,
-      velocity: puffVel.set(Math.random() - 0.5, 0.3, Math.random() - 0.5).multiplyScalar(2.5),
-    });
-  }
-}
-
-function handleImpacts() {
-  const toVanish = new Set<BlockEntity>();
-  events.drainCollisionEvents((h1, h2, started) => {
-    if (!started) return;
-    const a = colliderOwner.get(h1);
-    const b = colliderOwner.get(h2);
-    // post-solve speed of the faster body; resting contacts stay far below the thresholds
-    const speed = Math.max(bodySpeed(h1), bodySpeed(h2));
-    if (speed >= 1.5) playImpact(impactKind(a, b), speed);
-    if (speed >= DUST_SPEED) impactEffects(a, b, speed);
-    for (const e of [a, b]) {
-      if (!e || !('rig' in e) || speed < 3) continue;
-      if (isSpectator(e)) {
-        if ([a, b].some((o) => o && 'tool' in o)) bonk(e); // only a ball hit counts as a bonk
-      } else {
-        hitReaction(e);
-      }
-    }
-    const blocksHit = [a, b].filter(
-      (e): e is BlockEntity => !!e && 'type' in e && !!BLOCKS[e.type].behaviour,
-    );
-    const bombBall = [a, b].find((e): e is BallEntity => !!e && 'tool' in e && !!TOOLS[e.tool].explodes);
-    if (blocksHit.length === 0 && !bombBall) return;
-    if (bombBall && speed >= BOMB_BALL_TRIGGER_SPEED) scheduleBlast(bombBall, 0);
-    for (const e of blocksHit) triggerBlock(e, speed, a, b, toVanish);
-  });
-  vanishAll(toVanish);
-}
-
 // ---------- laser and hose ----------
 const sprayHit = new THREE.Vector3();
 
@@ -1240,8 +1032,8 @@ function fireLaser(px: number, py: number) {
   if (!owner || !('type' in owner) || !BLOCKS[owner.type].mobile) return;
   owner.body.applyImpulseAtPoint(beamDir.clone().multiplyScalar(LASER_IMPULSE), beamEnd, true);
   const toVanish = new Set<BlockEntity>();
-  triggerBlock(owner, LASER_SPEED, owner, undefined, toVanish);
-  vanishAll(toVanish);
+  physics.triggerBlock(owner, LASER_SPEED, owner, undefined, toVanish);
+  physics.vanishAll(toVanish);
 }
 
 /** One physics step of water: push the block under the nozzle and its neighbours along the stream. */
@@ -1274,7 +1066,7 @@ function applyHose() {
 
 /** True when nothing can move on its own, so the physics step can be skipped. */
 function worldAsleep() {
-  if (pendingBlasts.length > 0 || pendingLaunches.length > 0 || grab.entity || spraying) return false;
+  if (physics.hasPending() || grab.entity || spraying) return false;
   for (const b of balls) if (!b.body.isSleeping()) return false;
   for (const c of chars) if (!c.body.isSleeping()) return false;
   for (const s of crowd) if (!s.entity.body.isSleeping()) return false;
@@ -1360,25 +1152,12 @@ function stepPhysics() {
   physicsIdle = worldAsleep();
   if (!physicsIdle) world.step(events);
   simTime += STEP;
-  handleImpacts();
+  physics.handleImpacts();
 
-  for (let i = pendingLaunches.length - 1; i >= 0; i--) {
-    if (pendingLaunches[i].at > simTime) continue;
-    const [due] = pendingLaunches.splice(i, 1);
-    if (due.entity.status !== 'removed') {
-      const v = due.entity.body.linvel();
-      due.entity.body.setLinvel({ x: v.x, y: FIREWORK_LAUNCH_SPEED, z: v.z }, true);
-    }
-  }
-  for (let i = pendingBlasts.length - 1; i >= 0; i--) {
-    if (pendingBlasts[i].at <= simTime) {
-      const [due] = pendingBlasts.splice(i, 1);
-      detonate(due.entity);
-    }
-  }
+  physics.processPending(simTime);
 
   const fallY = level.platform.top - FALL_MARGIN;
-  let moving = pendingBlasts.length > 0 || grab.entity !== null || spraying; // holding or soaking is never "settled"
+  let moving = physics.hasPendingBlasts() || grab.entity !== null || spraying; // holding or soaking is never "settled"
   let allAsleep = true;
   const jenga = level.goal.type === 'jenga';
   for (const e of blocks) {
@@ -1963,6 +1742,7 @@ function sparkleGems(dt: number) {
 }
 
 const trailPos = new THREE.Vector3();
+const trailDir = new THREE.Vector3();
 
 /** White streak behind fast balls and glints off gems that are flying. */
 function updateTrails() {
@@ -1975,7 +1755,7 @@ function updateTrails() {
   for (const g of blocks) {
     if (g.type !== 'gem' || g.status === 'removed' || g.body.isSleeping()) continue;
     if (speedOf(g.body) < 3 || Math.random() < 0.5) continue;
-    trailPos.copy(g.currPos).addScaledVector(randomDir(puffVel), 0.5);
+    trailPos.copy(g.currPos).addScaledVector(randomDir(trailDir), 0.5);
     glow.emit(trailPos, { color: 0xffffff, size: [0.3, 0.05], life: 0.4, alpha: 0.9 });
   }
 }
@@ -2032,7 +1812,7 @@ function frame(now: number) {
 
 function tick(now: number) {
   const dt = Math.min((now - lastFrameAt) / 1000, 0.25);
-  acc += now < slowUntil ? dt * SLOWMO_SCALE : dt;
+  acc += now < physics.getSlowUntil() ? dt * SLOWMO_SCALE : dt;
   lastFrameAt = now;
   let steps = 0;
   while (acc >= STEP && steps < MAX_STEPS_PER_FRAME) {
@@ -2042,7 +1822,7 @@ function tick(now: number) {
   }
   if (steps === MAX_STEPS_PER_FRAME) acc = 0; // spiral-of-death guard
   // effects slow down with the sim, so slow-mo reads as bullet time
-  const fxDt = now < slowUntil ? dt * SLOWMO_SCALE : dt;
+  const fxDt = now < physics.getSlowUntil() ? dt * SLOWMO_SCALE : dt;
   for (const e of blocks) if (e.squash > 0) e.squash = Math.max(0, e.squash - fxDt / SQUASH_SECONDS);
   syncRender(acc / STEP);
   applyKeys(dt);
@@ -2079,7 +1859,7 @@ function tick(now: number) {
   glow.update(fxDt, pixelsPerUnit);
   shockwaves.update(fxDt, camera);
   shake.update(dt);
-  push += ((now < slowUntil ? SLOWMO_PUSH : 0) - push) * Math.min(dt * 4, 1);
+  push += ((now < physics.getSlowUntil() ? SLOWMO_PUSH : 0) - push) * Math.min(dt * 4, 1);
   pushOffset.copy(controls.target).sub(camera.position).multiplyScalar(push).add(shake.offset);
   camera.position.add(pushOffset); // shake and push-in move only the rendered frame, not the orbit state
   renderer.render(scene, camera);

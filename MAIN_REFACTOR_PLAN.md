@@ -39,8 +39,15 @@ step, zero behavior change. Tick boxes as steps land.
   getter), and `spraying` stays in main.ts behind get/set deps because the hose, tick and
   `clearLevel` also use it. Launch bookkeeping (throws used, party turn, last motion, stats) goes
   through an `onLaunched` callback, the same way grab uses `onPickUp`.
-- [ ] 7. **physics-step.ts** — stepPhysics, handleImpacts, detonate/triggerBlock/
-  blastEffects, impact sfx/fx, chain counting.
+- [x] 7. **physics-step.ts** — scope reduced from the original guess: `stepPhysics` (the per-tick
+  orchestrator), `finishIfDone`, `characterFell`, `popupFor`/`popupAt`, `syncRender` and
+  `worldAsleep` stay in main.ts, since they reach into grab, hose, crowd, characters, scoring and
+  level-completion. Moved as `createPhysicsStep`: the blast/impact machinery (scheduleBlast, ignite,
+  blastEffects, countChain, detonate, triggerBlock, vanishAll, impactEffects, handleImpacts), its
+  pending-blast/launch queues and chain/slow-mo state, and the two pending loops (now
+  `processPending(simTime)`, called from `stepPhysics`). Beyond the listed return values it also
+  returns `hasPendingBlasts` (the settle check counts only blasts) and `resetChain` (restart
+  clears the chain). `randomDir` is a module export, since the gem trail in main.ts uses it too.
 - [ ] 8. **characters-runtime.ts** — spawnCharacter, updateCharacters, near-miss/quip
   logic, get-up-if-fallen-over. (`characters.ts` stays data/specs only.)
 - [ ] 9. **level-runtime.ts** — loadLevel/clearLevel/restart, party flow (startSolo/
