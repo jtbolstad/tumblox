@@ -48,8 +48,12 @@ step, zero behavior change. Tick boxes as steps land.
   `processPending(simTime)`, called from `stepPhysics`). Beyond the listed return values it also
   returns `hasPendingBlasts` (the settle check counts only blasts) and `resetChain` (restart
   clears the chain). `randomDir` is a module export, since the gem trail in main.ts uses it too.
-- [ ] 8. **characters-runtime.ts** — spawnCharacter, updateCharacters, near-miss/quip
-  logic, get-up-if-fallen-over. (`characters.ts` stays data/specs only.)
+- [x] 8. **characters-runtime.ts** — spawnCharacter, updateCharacters, near-miss/quip
+  logic, get-up-if-fallen-over. (`characters.ts` stays data/specs only.) Done as
+  `createCharactersRuntime`. Scope notes: `pendingSleep` stays in main.ts (shared with `loadLevel`)
+  and is passed in. The factory runs after `createUi` (it needs `ui`), but `createCrowd` runs
+  earlier and takes `getUpIfFallenOver`/`hitReaction`, so the crowd deps forward to
+  `characters.*` through closures. The crowd array is passed directly.
 - [ ] 9. **level-runtime.ts** — loadLevel/clearLevel/restart, party flow (startSolo/
   startParty/endPartyTurn/partyTopple/finishParty/announceTurn/refreshParty).
 - [x] 10. **remote-ui.ts** — scope reduced from the original guess: only the QR/status
@@ -67,7 +71,7 @@ step, zero behavior change. Tick boxes as steps land.
 
 Execution handed to a background agent (one fork, all steps, committing as it goes).
 Update this checklist and the line below once it reports back.
-- Last known main.ts line count: 2152 (after step 6; 2491 after step 5; 3081 was the pre-refactor baseline)
+- Last known main.ts line count: 1769 (after step 8; 2152 after step 6; 2491 after step 5; 3081 was the pre-refactor baseline)
 - Manual browser smoke test (throw, grab, laser, hose, party mode) still required
   before this is trusted, per CLAUDE.md testing norms — automated gate is tsc+vitest
   only, no UI exercised during the mechanical move.
