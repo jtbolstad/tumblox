@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { GAME_NAME, GLYPH_ROWS, layoutText } from './glyphs';
+import { GLYPH_ROWS, layoutText } from './glyphs';
+import { gameName } from './i18n';
 import { titleLevel } from './title';
 
 describe('layoutText', () => {
@@ -24,7 +25,7 @@ describe('layoutText', () => {
 describe('titleLevel', () => {
   it('builds a valid level with one block per cell, all on the platform', () => {
     const level = titleLevel();
-    expect(level.blocks).toHaveLength(layoutText(GAME_NAME).cells.length);
+    expect(level.blocks).toHaveLength(layoutText(gameName()).cells.length);
     const half = level.platform.size[0] / 2;
     expect(level.blocks.every((b) => Math.abs(b.pos[0]) < half)).toBe(true);
   });

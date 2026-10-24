@@ -283,7 +283,12 @@ export function createUi(handlers: UiHandlers) {
       const medal = el('result-medal');
       medal.textContent = opts.won ? (opts.medal ? MEDAL_ICON[opts.medal] : 'No medal') : '';
       medal.classList.remove('drop');
+      const panel = medal.parentElement as HTMLElement;
+      panel.style.overflow = '';
       if (opts.won && opts.medal) {
+        // the medal overshoots the panel while it drops; clip until it lands so no scrollbars flash up
+        panel.style.overflow = 'hidden';
+        medal.addEventListener('animationend', () => (panel.style.overflow = ''), { once: true });
         void medal.offsetWidth; // restart the drop animation
         medal.classList.add('drop');
       }

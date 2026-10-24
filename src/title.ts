@@ -1,4 +1,5 @@
-import { GAME_NAME, LETTER_TYPES, layoutText } from './glyphs';
+import { LETTER_TYPES, layoutText } from './glyphs';
+import { gameName } from './i18n';
 import { type Level, parseLevel } from './level';
 
 /** Edge of one title block, in metres. */
@@ -6,11 +7,12 @@ export const TITLE_BLOCK = 0.9;
 
 /** The title screen as a level: the game name built from blocks, free throws, no goal. */
 export function titleLevel(): Level {
-  const { cells, width } = layoutText(GAME_NAME);
+  const name = gameName();
+  const { cells, width } = layoutText(name);
   const s = TITLE_BLOCK;
   return parseLevel({
     id: 'title',
-    name: GAME_NAME,
+    name,
     tool: 'ball',
     throws: 999,
     goal: { type: 'clearBoard' },

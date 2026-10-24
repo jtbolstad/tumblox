@@ -80,6 +80,7 @@ import {
 } from './scene';
 import { THEMES, type ThemeId } from './themes';
 import { chargeTier, type PointerSample, powerTier, releaseVelocity } from './throw';
+import { lang, setLang, startTranslating } from './i18n';
 import { titleLevel } from './title';
 import { TOOL_IDS, TOOLS, type ToolId } from './tools';
 import { createUi } from './ui';
@@ -335,7 +336,7 @@ function applyStageLight(title: boolean) {
   setSkyColors(sky, { top: dim(t.sky.top), horizon: dim(t.sky.horizon), bottom: dim(t.sky.bottom) });
   background.set(dim(t.sky.horizon));
   fog.color.set(dim(t.sky.horizon));
-  stageSpot.intensity = title ? 7500 : daylight ? 2200 : 4500;
+  stageSpot.intensity = title ? 4500 : daylight ? 2200 : 4500;
   stageSpot.target.position.set(0, title ? 3.5 : level.platform.top + 2, 0);
 }
 
@@ -411,13 +412,30 @@ let platformCollider: RAPIER.Collider | null = null;
 let platformMesh: THREE.Mesh | null = null;
 let platformShadow: THREE.Mesh | null = null;
 const zoneMeshes: THREE.Mesh[] = [];
-const particles = new Particles(scene);
+const particles = new Particles(scene, 1400);
 const shake = new Shake();
 const smoke = new Puffs(scene, 160, THREE.NormalBlending);
 const glow = new Puffs(scene, 120, THREE.AdditiveBlending);
 const shockwaves = new Shockwaves(scene);
 const debris = new Debris(scene);
 
+/**
+ * Black ink outline for the title letters: a back-face copy of the block pushed out along its normals by a fixed
+ * distance in metres, whatever the block's size (shares the block's instance matrices).
+ */
+function outlineMaterial(thickness: number) {
+  const mat = new THREE.MeshBasicMaterial({ color: 0x000000, side: THREE.BackSide, fog: false });
+  mat.onBeforeCompile = (shader) => {
+    shader.vertexShader = shader.vertexShader.replace(
+      '#include <begin_vertex>',
+      `#include <begin_vertex>
+      vec3 blockSize = vec3(length(instanceMatrix[0].xyz), length(instanceMatrix[1].xyz), length(instanceMatrix[2].xyz));
+      transformed += normalize(normal) * ${thickness.toFixed(3)} / blockSize;`,
+    );
+  };
+  return mat;
+}
+const titleOutlineMat = outlineMaterial(0.09);
 const boxGeo = new RoundedBoxGeometry(1, 1, 1, 2, 0.07); // bevelled like a wooden toy block
 const hiddenMatrix = new THREE.Matrix4().makeScale(0, 0, 0);
 const platformMat = new THREE.MeshStandardMaterial({
@@ -625,6 +643,7 @@ function finishParty() {
   if (!party?.winners) return;
   phase = 'won';
   playStinger('win');
+  celebrate(30);
   const names = party.winners.map(playerLabel).join(' & ');
   const detail =
     party.mode === 'duel'
@@ -674,6 +693,7 @@ function loadLevel(index: number) {
   applyStageLight(index === TITLE_INDEX);
   applyProps(level.theme, Math.max(...level.platform.size) / 2, level.id);
   resetCrowd(); // back on their perches, and known to the collision lookup again (clearLevel emptied it)
+  fireworkQueue.length = 0;
   throwsUsed = 0;
   lastThrowAt = -Infinity;
   simTime = 0;
@@ -704,6 +724,27 @@ function loadLevel(index: number) {
   platformShadow = makeContactShadow(sx, sz);
   scene.add(platformMesh, platformShadow);
   zoneMeshes.length = 0;
+  if (level === titleScene) {
+    // black outline along the foot of the letters: a thin slab under each block that rests on the platform
+    const feet = level.blocks.filter((b) => b.pos[1] - b.size[1] / 2 < 0.05);
+    const outline = 0.09;
+    const slab = new THREE.InstancedMesh(
+      new THREE.BoxGeometry(1, 0.02, 1),
+      new THREE.MeshBasicMaterial({ color: 0x000000, fog: false }),
+      feet.length,
+    );
+    feet.forEach((b, i) => {
+      tmpMat.compose(
+        tmpPos.set(b.pos[0], top + 0.011, b.pos[2]),
+        tmpRot.identity(),
+        tmpScale.set(b.size[0] + outline * 2, 1, b.size[2] + outline * 2),
+      );
+      slab.setMatrixAt(i, tmpMat);
+    });
+    slab.frustumCulled = false;
+    scene.add(slab);
+    zoneMeshes.push(slab);
+  }
   for (const zone of level.zones) {
     const mesh = makeZoneMesh(zone);
     scene.add(mesh);
@@ -716,12 +757,30 @@ function loadLevel(index: number) {
   const meshByType = new Map<BlockType, THREE.InstancedMesh>();
   const nextInstance = new Map<BlockType, number>();
   for (const [type, count] of counts) {
-    const mesh = new THREE.InstancedMesh(boxGeo, blockMaterial(type), count);
+    let material = blockMaterial(type);
+    if (level === titleScene && material instanceof THREE.MeshStandardMaterial) {
+      // a faint glow keeps the sign's colours up without flattening its shading and markings
+      material = material.clone();
+      const hsl = { h: 0, s: 0, l: 0 };
+      material.color.getHSL(hsl);
+      material.color.setHSL(hsl.h, 1, 0.5); // fully saturated, mid brightness
+      material.emissive.copy(material.color);
+      material.emissiveIntensity = 0.15;
+    }
+    const mesh = new THREE.InstancedMesh(boxGeo, material, count);
     mesh.castShadow = true;
     mesh.receiveShadow = true;
     mesh.frustumCulled = false;
     scene.add(mesh);
     blockMeshes.push(mesh);
+    if (level === titleScene) {
+      // blocks touch, so only the outline of the whole letter shows
+      const outline = new THREE.InstancedMesh(boxGeo, titleOutlineMat, count);
+      outline.instanceMatrix = mesh.instanceMatrix; // moves with the blocks
+      outline.frustumCulled = false;
+      scene.add(outline);
+      blockMeshes.push(outline);
+    }
     meshByType.set(type, mesh);
     nextInstance.set(type, 0);
   }
@@ -772,7 +831,7 @@ function loadLevel(index: number) {
 
   for (const spec of level.characters) spawnCharacter(spec, top);
 
-  frameCamera();
+  frameCamera(true);
   startIntro();
   syncRender(1);
   refreshStats();
@@ -836,7 +895,8 @@ function spawnCharacter(spec: Level['characters'][number], top: number) {
   colliderOwner.set(collider.handle, entity);
 }
 
-function frameCamera() {
+/** `vary`: a level start picks a random height and distance; resetting the view (Enter) does not. */
+function frameCamera(vary = false) {
   let maxY = 0;
   let maxX = 0;
   for (const b of level.blocks) {
@@ -855,7 +915,9 @@ function frameCamera() {
     ? Math.min(fitWidth, controls.maxDistance - 1)
     : Math.min(Math.max(7 + maxY * 1.1 + maxX * 1.0, 9, fitWidth), controls.maxDistance - 1);
   controls.target.set(0, top + maxY / 2, 0);
-  camera.position.set(0, onTitle ? top + maxY / 2 : top + maxY * 0.45 + 1.5, dist); // the title is seen straight on
+  const spread = vary && !onTitle ? Math.random() : 0.4;
+  const height = top + maxY * 0.45 + 1.5 + (spread - 0.4) * (3 + maxY * 0.8); // from near ground level to a high view
+  camera.position.set(0, onTitle ? top + maxY / 2 : height, dist * (vary && !onTitle ? 0.9 + Math.random() * 0.25 : 1)); // the title is seen straight on
   controls.update();
 }
 
@@ -1520,6 +1582,39 @@ function stepPhysics() {
   }
 }
 
+// ---------- fireworks: a big volley right in front of the camera when a level is cleared ----------
+const fireworkQueue: { at: number; colors: [number, number] }[] = [];
+const FIREWORK_COLORS = [0xff5d8f, 0xffd23f, 0x3da5ff, 0x57cc99, 0xff8c42, 0xb07cff, 0xffffff];
+const fireworkPos = new THREE.Vector3();
+const fireworkAxis = new THREE.Vector3();
+
+function celebrate(bursts: number) {
+  const now = performance.now();
+  const pick = () => FIREWORK_COLORS[Math.floor(Math.random() * FIREWORK_COLORS.length)];
+  for (let i = 0; i < bursts; i++) {
+    fireworkQueue.push({ at: now + 200 + i * 130 + Math.random() * 150, colors: [pick(), pick()] });
+  }
+}
+
+function updateFireworks(now: number) {
+  for (let i = fireworkQueue.length - 1; i >= 0; i--) {
+    const f = fireworkQueue[i];
+    if (now < f.at) continue;
+    fireworkQueue.splice(i, 1);
+    // somewhere in the view, between the camera and the island, so the sparks fill the foreground
+    camera.getWorldDirection(fireworkPos);
+    fireworkPos.multiplyScalar(5 + Math.random() * 8).add(camera.position);
+    fireworkAxis.set(1, 0, 0).applyQuaternion(camera.quaternion);
+    fireworkPos.addScaledVector(fireworkAxis, (Math.random() - 0.5) * 12);
+    fireworkAxis.set(0, 1, 0).applyQuaternion(camera.quaternion);
+    fireworkPos.addScaledVector(fireworkAxis, (Math.random() - 0.3) * 6);
+    glow.emit(fireworkPos, { color: 0xfff1c1, size: [1.5, 6], life: 0.3, alpha: 1 });
+    particles.burst(fireworkPos, f.colors[0], 70, 8);
+    particles.burst(fireworkPos, f.colors[1], 40, 5);
+    if (Math.random() < 0.5) playScore('gem');
+  }
+}
+
 function finishIfDone() {
   const states = blockStates();
   const friendDown = friendLost(charStates());
@@ -1532,6 +1627,7 @@ function finishIfDone() {
     const saved = recordResult(level.id, score, medal);
     playStinger(medal === 'gold' ? 'gold' : 'win');
     playCrowd('cheer');
+    celebrate(medal === 'gold' ? 40 : 26);
     ui.showResult({ won: true, score, medal, best: saved.best, hasNext: levelIndex < levels.length - 1 });
   } else {
     playStinger('lose');
@@ -1701,6 +1797,9 @@ addEventListener('click', () => {
   }
 });
 
+const langBtn = document.getElementById('lang-btn') as HTMLElement;
+langBtn.textContent = lang === 'nb' ? 'EN' : 'NO'; // shows the language a click switches to
+langBtn.addEventListener('click', () => setLang(lang === 'nb' ? 'en' : 'nb'));
 const qualityBtn = document.getElementById('quality-btn') as HTMLElement;
 function showQuality() {
   qualityBtn.textContent = quality[0].toUpperCase() + quality.slice(1);
@@ -2124,7 +2223,7 @@ function removeCrowd() {
 function buildCrowd() {
   removeCrowd();
   if (!themeId) return;
-  const rand = seeded(crowdSeed);
+  const rand = seeded((Math.random() * 2 ** 31) | 0); // a different crowd every time
   const palette = crowdKinds(themeId, THEMES[themeId].crowd, level.characters.map((c) => c.kind));
   const natives = THEMES[themeId].crowd.filter((k) => palette.includes(k));
   const count = QUALITY_SETTINGS[quality].crowd;
@@ -2370,6 +2469,7 @@ if (import.meta.env.PROD && 'serviceWorker' in navigator) {
 // ---------- main loop ----------
 initMusic();
 showTitle();
+startTranslating();
 
 let lastFrameAt = performance.now();
 let acc = 0;
@@ -2411,6 +2511,7 @@ function tick(now: number) {
   sparkleGems(dt);
   updateCharacters(dt);
   updateCrowd(dt);
+  updateFireworks(now);
   updateTrails();
   particles.update(fxDt, params.gravity);
   debris.update(fxDt, params.gravity);

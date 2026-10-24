@@ -83,7 +83,7 @@
       #title .bottom { margin-bottom: 4vh; display: flex; flex-direction: column; align-items: center; gap: 10px; }
       #title button { pointer-events: auto; font-size: 2.4em; padding: 20px 72px; border-radius: 22px; box-shadow: 0 7px 0 #c96a00; }
       #title .try { font-size: 0.9em; color: #fff; opacity: 0.85; text-shadow: 0 2px 6px rgba(0, 0, 0, 0.7); }
-      body.on-title #hud > :not(#mute-btn):not(#sound-btn):not(#quality-btn) { display: none; }
+      body.on-title #hud > :not(#mute-btn):not(#sound-btn):not(#quality-btn):not(#lang-btn) { display: none; }
       .drop { animation: medal-drop 0.9s cubic-bezier(0.3, 1.6, 0.5, 1) both; }
       @keyframes medal-drop {
         0% { opacity: 0; transform: translateY(-120px) rotate(-30deg) scale(0.6); }
@@ -96,16 +96,15 @@
       #sound-panel[hidden] { display: none; }
       #sound-panel label { display: grid; grid-template-columns: 4.5em 1fr; align-items: center; gap: 10px; }
       #sound-panel input { width: 150px; accent-color: var(--accent); }
-      #banner { position: fixed; top: 64px; left: 50%; transform: translateX(-50%); width: min(520px, calc(100% - 32px)); box-sizing: border-box; text-align: center; background: var(--panel); border-radius: 18px; padding: 14px 20px 16px; box-shadow: 0 8px 24px rgba(2, 48, 71, 0.25); pointer-events: none; animation: banner-in 0.5s cubic-bezier(0.3, 1.5, 0.5, 1) both; }
+      #banner { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); width: min(820px, calc(100% - 32px)); box-sizing: border-box; text-align: center; background: var(--panel); border-radius: 28px; padding: 28px 36px 32px; font-size: 1.35em; box-shadow: 0 8px 24px rgba(2, 48, 71, 0.25); pointer-events: none; animation: banner-in 0.5s cubic-bezier(0.3, 1.5, 0.5, 1) both; }
       #banner[hidden] { display: none; }
-      @media (max-width: 700px) { #banner { top: 132px; } }
       body.capture #banner { display: none; }
       #banner.leaving { animation: banner-out 0.35s ease-in forwards; }
-      #banner .title { font-weight: 800; font-size: 1.05em; color: var(--accent); letter-spacing: 0.02em; }
-      #banner .goal { font-weight: 800; font-size: 1.55em; line-height: 1.15; margin: 4px 0 8px; }
+      #banner .title { font-weight: 800; font-size: 1.15em; color: var(--accent); letter-spacing: 0.02em; }
+      #banner .goal { font-weight: 800; font-size: 2em; line-height: 1.15; margin: 4px 0 8px; }
       #banner .line { font-weight: 600; opacity: 0.85; line-height: 1.5; }
-      @keyframes banner-in { from { opacity: 0; transform: translate(-50%, -30px) scale(0.85); } to { opacity: 1; transform: translate(-50%, 0) scale(1); } }
-      @keyframes banner-out { to { opacity: 0; transform: translate(-50%, -20px) scale(0.95); } }
+      @keyframes banner-in { from { opacity: 0; transform: translate(-50%, -40%) scale(0.85); } to { opacity: 1; transform: translate(-50%, -50%) scale(1); } }
+      @keyframes banner-out { to { opacity: 0; transform: translate(-50%, -55%) scale(0.95); } }
       .big { font-size: 2.2em; margin: 4px 0; }
     </style>
   </head>
@@ -117,6 +116,7 @@
       <button type="button" id="mute-btn" class="secondary" aria-label="Toggle sound">🔊</button>
       <button type="button" id="sound-btn" class="secondary" aria-label="Sound settings" aria-expanded="false" aria-controls="sound-panel">🎚</button>
       <button type="button" id="quality-btn" class="secondary" aria-label="Graphics quality">High</button>
+      <button type="button" id="lang-btn" class="secondary" aria-label="Language">NO</button>
       <span id="level-name"></span>
       <span><span id="throws-label">Throws</span>: <span id="throws">0</span></span>
       <span>Score: <span id="score">0</span></span>
