@@ -26,7 +26,7 @@ step, zero behavior change. Tick boxes as steps land.
 - [x] 2. **crowd.ts** — buildCrowd/stepCrowd/updateCrowd/poof/bonk/sendHome/resetCrowd,
   spectator array. Distinct from `characters.ts` (data/specs).
 - [x] 3. **fireworks.ts** — rockets array, celebrate(), updateFireworks().
-- [ ] 4. **tool-fx.ts** — laser beam + hose jet: showBeam/castBeam/fireLaser,
+- [x] 4. **tool-fx.ts** — laser beam + hose jet: showBeam/castBeam/fireLaser,
   showJet/applyHose.
 - [ ] 5. **grab.ts** — pickBlock/beginGrab/applyGrabForce, grab highlight tint.
 - [ ] 6. **aim-input.ts** (may split into input-capture.ts + trajectory.ts) — pointer/
