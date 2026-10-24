@@ -45,8 +45,19 @@ Same as round 1:
 - `loadLevel`/`clearLevel`/`stepPhysics`/`finishIfDone` stay — they're the wiring seams between
   every already-extracted module, not leftover mess.
 
+## Round 3 (unplanned extra steps)
+
+- [x] 4. **materials.ts** — `outlineMaterial`/`blockMaterial`, `boxGeo`/`hiddenMatrix`/`titleOutlineMat`.
+  Pure material/geometry factories, only needed `blockTexture`.
+- [x] 5. **balls.ts** — `spawnBall`/`removeBallBody`, `ballGeo`/`toolMats`/`MAX_BALLS`. Factory
+  takes `world`/`scene`/`balls`/`colliderOwner` plus `getLevel`/`getMassScale`/`getRadiusScale`
+  getters, same pattern as `gem-fx.ts`. The factory call had to move earlier in main.ts (right
+  after `level`/`balls`/`colliderOwner` are declared) since `createPhysicsStep` and
+  `createCharactersRuntime` reference `removeBallBody` directly at module top level, not inside a
+  function — a real TDZ constraint, not just a style choice.
+
 ## Status
 
-Done. main.ts: 1580 → 1400 lines. All three steps build/test/lint clean, one commit each.
-Manual browser smoke test (level load, theme switch, title/result lighting, gems, debug panel)
-still required.
+Done. main.ts: 1580 → 1320 lines (round 2) + (round 3). All five steps build/test/lint clean.
+Manual browser smoke test (level load, theme switch, title/result lighting, gems, debug panel,
+throwing balls) still required.
