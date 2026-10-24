@@ -3,20 +3,7 @@ import RAPIER from '@dimforge/rapier3d-compat';
 import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
 import { createAimInput, createAimVisuals, MIN_CHARGE_SECONDS, TAP_SPEED_THRESHOLD } from './aim-input';
-import {
-  type Channel,
-  getVolume,
-  isMuted,
-  playCrowd,
-  playLaser,
-  playScore,
-  playStinger,
-  setAmbience,
-  setMuted,
-  setVolume,
-  unlockAudio,
-  unlockOnFirstGesture,
-} from './audio';
+import { playCrowd, playLaser, playScore, playStinger, setAmbience, unlockOnFirstGesture } from './audio';
 import { BLOCKS, type BlockType } from './blocks';
 import { levelBrief } from './brief';
 import { createCameraRig } from './camera-runtime';
@@ -36,7 +23,8 @@ import {
 import { createFireworks } from './fireworks';
 import { Debris, disposeMesh, makeZoneMesh, Particles, Puffs, Shake, Shockwaves, Sparks } from './fx';
 import { createGrab, WHITE } from './grab';
-import { lang, setLang, startTranslating } from './i18n';
+import { createHudPanels, QUALITIES, type Quality } from './hud-panels';
+import { startTranslating } from './i18n';
 import { type Level, loadBundledLevels } from './level';
 import { blockTexture } from './marks';
 import { initMusic, setTrack } from './music';
@@ -110,8 +98,6 @@ const HOSE_FORCE = 26; // N at the centre of the stream
 const HOSE_RANGE = 22; // m
 const HOSE_SPLASH = 1.1; // m around the hit point that is pushed too
 const INFINITE_TURNS = 999; // Jenga-off has no throw limit
-const QUALITIES = ['low', 'medium', 'high'] as const;
-type Quality = (typeof QUALITIES)[number];
 const QUALITY_SETTINGS: Record<
   Quality,
   { pixelRatio: number; shadowMap: number; extras: boolean; crowd: number }
@@ -1411,59 +1397,12 @@ remotePanel.addEventListener('click', (ev) => ev.stopPropagation());
 // no keyboard/mouse on a TV: the QR goes up by itself, instead of waiting for a tap on remoteBtn
 if (isTv) openRemotePanel();
 
-const muteBtn = document.getElementById('mute-btn') as HTMLElement;
-function showMute() {
-  muteBtn.textContent = isMuted() ? '🔇' : '🔊';
-}
-showMute();
-muteBtn.addEventListener('click', () => {
-  setMuted(!isMuted());
-  showMute();
-  unlockAudio();
-});
-
-// sound panel: one slider per channel
-const soundBtn = document.getElementById('sound-btn') as HTMLElement;
-const soundPanel = document.getElementById('sound-panel') as HTMLElement;
-for (const input of soundPanel.querySelectorAll<HTMLInputElement>('input[type=range]')) {
-  const channel = input.dataset.channel as Channel;
-  input.value = String(Math.round(getVolume(channel) * 100));
-  input.addEventListener('input', () => {
-    unlockAudio();
-    setVolume(channel, Number(input.value) / 100);
-  });
-}
-soundBtn.addEventListener('click', (ev) => {
-  ev.stopPropagation();
-  soundPanel.hidden = !soundPanel.hidden;
-  soundBtn.setAttribute('aria-expanded', String(!soundPanel.hidden));
-  unlockAudio();
-});
-soundPanel.addEventListener('click', (ev) => ev.stopPropagation());
-addEventListener('click', () => {
-  if (!soundPanel.hidden) {
-    soundPanel.hidden = true;
-    soundBtn.setAttribute('aria-expanded', 'false');
-  }
-});
-
-const langBtn = document.getElementById('lang-btn') as HTMLElement;
-langBtn.textContent = lang === 'nb' ? 'EN' : 'NO'; // shows the language a click switches to
-langBtn.addEventListener('click', () => setLang(lang === 'nb' ? 'en' : 'nb'));
-const qualityBtn = document.getElementById('quality-btn') as HTMLElement;
-function showQuality() {
-  qualityBtn.textContent = quality[0].toUpperCase() + quality.slice(1);
-}
-showQuality();
-qualityBtn.addEventListener('click', () => {
-  quality = QUALITIES[(QUALITIES.indexOf(quality) + 1) % QUALITIES.length];
-  try {
-    localStorage.setItem('blox.quality.v1', quality);
-  } catch {
-    // ignore: the choice just is not remembered
-  }
-  applyQuality();
-  showQuality();
+createHudPanels({
+  getQuality: () => quality,
+  setQuality: (q) => {
+    quality = q;
+  },
+  applyQuality,
 });
 
 // ---------- aim visuals, the grab tool, and the throw input (see aim-input.ts and grab.ts) ----------

@@ -62,7 +62,9 @@ step, zero behavior change. Tick boxes as steps land.
   into party/phase/grab/spraying/launch state deeply enough that extracting them would
   mean threading ~15 getters/setters for no real decoupling, just code motion. Done
   alongside the TV-mode work (see `TV_MODE_PLAN.md`), which touched this same area anyway.
-- [ ] 11. **hud-panels.ts** — mute/sound/lang/quality button wiring.
+- [x] 11. **hud-panels.ts** — mute/sound/lang/quality button wiring, as `createHudPanels`.
+  `QUALITIES`/`Quality` moved here (main.ts imports them back); `quality` stays a `let` in
+  main.ts behind `getQuality`/`setQuality`, with `applyQuality` passed in.
 - [ ] 12. Final pass: confirm what's left in main.ts is bootstrap only (renderer/scene/
   world setup, entity arrays, wiring the extracted modules, the frame/tick loop).
   Target ~300-400 lines.
@@ -71,7 +73,7 @@ step, zero behavior change. Tick boxes as steps land.
 
 Execution handed to a background agent (one fork, all steps, committing as it goes).
 Update this checklist and the line below once it reports back.
-- Last known main.ts line count: 1769 (after step 8; 2152 after step 6; 2491 after step 5; 3081 was the pre-refactor baseline)
+- Last known main.ts line count: 1708 (after step 11; 1769 after step 8; 2152 after step 6; 2491 after step 5; 3081 was the pre-refactor baseline)
 - Manual browser smoke test (throw, grab, laser, hose, party mode) still required
   before this is trusted, per CLAUDE.md testing norms — automated gate is tsc+vitest
   only, no UI exercised during the mechanical move.
