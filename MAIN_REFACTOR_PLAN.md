@@ -29,9 +29,16 @@ step, zero behavior change. Tick boxes as steps land.
 - [x] 4. **tool-fx.ts** — laser beam + hose jet: showBeam/castBeam/fireLaser,
   showJet/applyHose.
 - [x] 5. **grab.ts** — pickBlock/beginGrab/applyGrabForce, grab highlight tint.
-- [ ] 6. **aim-input.ts** (may split into input-capture.ts + trajectory.ts) — pointer/
+- [x] 6. **aim-input.ts** (may split into input-capture.ts + trajectory.ts) — pointer/
   touch/keyboard capture, charge tiers, launch(), trajectory arc, aim/grab/beam
-  preview. Depends on steps 1, 4, 5.
+  preview. Depends on steps 1, 4, 5. Done as one file (`createAimInput` + `createAimVisuals`).
+  Scope notes: the target ring and trajectory arc are built by `createAimVisuals(scene)` before
+  `createGrab`, because the grab tool draws with the same ring/arc and the aim input needs
+  `createGrab`'s return values, so creating them inside `createAimInput` would be a cycle.
+  `canThrow`, the tool predicates and `remoteHoldStart` stay in main.ts (the last is read via a
+  getter), and `spraying` stays in main.ts behind get/set deps because the hose, tick and
+  `clearLevel` also use it. Launch bookkeeping (throws used, party turn, last motion, stats) goes
+  through an `onLaunched` callback, the same way grab uses `onPickUp`.
 - [ ] 7. **physics-step.ts** — stepPhysics, handleImpacts, detonate/triggerBlock/
   blastEffects, impact sfx/fx, chain counting.
 - [ ] 8. **characters-runtime.ts** — spawnCharacter, updateCharacters, near-miss/quip
@@ -53,7 +60,7 @@ step, zero behavior change. Tick boxes as steps land.
 
 Execution handed to a background agent (one fork, all steps, committing as it goes).
 Update this checklist and the line below once it reports back.
-- Last known main.ts line count: 2491 (after step 5; 3081 was the pre-refactor baseline)
+- Last known main.ts line count: 2152 (after step 6; 2491 after step 5; 3081 was the pre-refactor baseline)
 - Manual browser smoke test (throw, grab, laser, hose, party mode) still required
   before this is trusted, per CLAUDE.md testing norms — automated gate is tsc+vitest
   only, no UI exercised during the mechanical move.
