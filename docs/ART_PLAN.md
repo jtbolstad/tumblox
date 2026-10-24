@@ -77,13 +77,13 @@ Each theme adds its own sky, island and prop colours without touching block colo
 
 Driven by the existing `theme` field in `src/level.ts`. Props are decoration only: no colliders, outside the play area, merged into one draw call per theme.
 
-| Theme                  | Sky and island                          | Props (built from primitives)                      | Music                                     |
-| ---------------------- | --------------------------------------- | -------------------------------------------------- | ----------------------------------------- |
-| Meadow (Explore, menu) | blue sky, grassy island                 | trees, flowers, fence, windmill                    | bouncy marimba and tuba                   |
-| Tiki Isle              | sunset, sandy island in a turquoise sea | palms, torches, totems, huts                       | log drums and plucked strings             |
-| Castle Hill            | morning sky, green hill                 | banners, towers, drawbridge, hay bales             | recorder-and-lute jig in 6/8              |
-| Dusty Gulch            | hot orange sky, red rock mesa           | cacti, barrels, water tower, cow skull             | banjo hoedown in 2/4                      |
-| Spooky Manor           | purple night, moon                      | tombstones, pumpkins, dead trees, manor silhouette | minor harpsichord waltz with a "theremin" |
+| Theme                  | Sky and island                           | Props (built from primitives)                      | Music                                     |
+| ---------------------- | ---------------------------------------- | -------------------------------------------------- | ----------------------------------------- |
+| Meadow (Explore, menu) | blue sky, grassy island                  | trees, flowers, fence, windmill                    | bouncy marimba and tuba                   |
+| Tiki Isle              | sunset, sandy island in a turquoise sea  | palms, torches, totems, huts                       | log drums and plucked strings             |
+| Castle Hill            | morning sky, green hill                  | banners, towers, drawbridge, hay bales             | recorder-and-lute jig in 6/8              |
+| Dusty Gulch            | hot orange sky, red rock mesa            | cacti, barrels, water tower, cow skull             | banjo hoedown in 2/4                      |
+| Spooky Manor           | purple night, moon                       | tombstones, pumpkins, dead trees, manor silhouette | minor harpsichord waltz with a "theremin" |
 | Pirate Cove            | overcast sky, sandy island in a teal sea | shipwreck, palms, barrels, treasure chests         | swung fiddle sea shanty over banjo        |
 - [x] Theme system: sky colours, island materials, light, pedestal, prop set, distant scenery (`src/themes.ts`, `src/props.ts`); music track and ambient sound bed per world moved to stage E
 - [x] Six themes; existing levels regrouped into worlds (Meadow 1–6, Tiki 7–12, Castle 13–18, Gulch 19–24, Manor 25–28, Pirate Cove 29–31); the Explore/Adventure structure in `docs/PLAN.md` Phase 2 is still open

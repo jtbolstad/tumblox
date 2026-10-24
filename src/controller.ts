@@ -1,12 +1,12 @@
 // The phone side of the remote: tilt aims, a swipe on the pad throws.
 import '@fontsource-variable/fredoka';
 import Peer from 'peerjs';
-import { startTranslating, tr } from './i18n';
-import { loadBundledLevels } from './level';
-import { type HostMsg, parseHostMsg, type RemoteMsg, wrapDeg } from './remote-protocol';
-import { THEME_IDS, THEMES } from './themes';
-import { chargeTier, type PointerSample, powerTier, releaseVelocity } from './throw';
-import { levelThumb } from './thumb';
+import { loadBundledLevels } from './data/level';
+import { THEME_IDS, THEMES } from './data/themes';
+import { chargeTier, type PointerSample, powerTier, releaseVelocity } from './input/throw';
+import { type HostMsg, parseHostMsg, type RemoteMsg, wrapDeg } from './remote/remote-protocol';
+import { levelThumb } from './render/thumb';
+import { startTranslating, tr } from './ui/i18n';
 
 const el = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 const status = el('status');

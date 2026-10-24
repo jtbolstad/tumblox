@@ -2,51 +2,20 @@ import '@fontsource-variable/fredoka';
 import RAPIER from '@dimforge/rapier3d-compat';
 import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
-import { createAimInput, createAimVisuals, MIN_CHARGE_SECONDS, TAP_SPEED_THRESHOLD } from './aim-input';
-import { playCrowd, playLaser, playScore, playStinger, setAmbience, unlockOnFirstGesture } from './audio';
-import { createBalls } from './balls';
-import { BLOCKS, type BlockType } from './blocks';
-import { levelBrief } from './brief';
-import { createCameraRig } from './camera-runtime';
-import { createCharactersRuntime } from './characters-runtime';
-import { createCrowd } from './crowd';
-import { createDebugPanel } from './debug-panel';
-import { isTv } from './device';
 import {
-  type BallEntity,
-  type BlockEntity,
-  type CharacterEntity,
-  capture,
-  makeEntityBase,
-  type Owner,
-  type Phase,
-  speedOf,
-} from './entities';
-import { createFireworks } from './fireworks';
-import { Debris, disposeMesh, makeZoneMesh, Particles, Puffs, Shake, Shockwaves, Sparks } from './fx';
-import { createGemFx } from './gem-fx';
-import { createGrab, WHITE } from './grab';
-import { createHudPanels, QUALITIES, type Quality } from './hud-panels';
-import { startTranslating } from './i18n';
-import { type Level, loadBundledLevels } from './level';
-import { createLevelRuntime } from './level-runtime';
-import { blockTexture } from './marks';
-import { blockMaterial, boxGeo, hiddenMatrix, titleOutlineMat } from './materials';
-import { initMusic, setTrack } from './music';
-import { type Party, partyModeFor } from './party';
-import { createPhysicsStep } from './physics-step';
-import { loadProgress, recordResult } from './progress';
-import { type RemoteHost, startRemoteHost } from './remote';
-import {
-  aimToScreen,
-  type HostMsg,
-  MAX_REMOTE_SLOTS,
-  ORBIT_TILT_SPEED,
-  ORBIT_YAW_SPEED,
-  REMOTE_SPEED_SCALE,
-  type RemoteMsg,
-} from './remote-protocol';
-import { createRemoteSlotPanel } from './remote-ui';
+  playCrowd,
+  playLaser,
+  playScore,
+  playStinger,
+  setAmbience,
+  unlockOnFirstGesture,
+} from './audio/audio';
+import { initMusic, setTrack } from './audio/music';
+import { createCrowd } from './characters/crowd';
+import { BLOCKS, type BlockType } from './data/blocks';
+import { type Level, loadBundledLevels } from './data/level';
+import { type Party, partyModeFor } from './data/party';
+import { loadProgress, recordResult } from './data/progress';
 import {
   characterScore,
   finalScore,
@@ -56,15 +25,60 @@ import {
   outcome,
   RIVAL_POINTS,
   zoneMultiplier,
-} from './rules';
-import { addLights, CATCH_FLOOR_Y, ISLAND_RADIUS, makeClouds, makeContactShadow, makeSky } from './scene';
-import { createSkyEvents } from './sky-event';
-import { THEMES } from './themes';
-import { chargeTier } from './throw';
-import { createToolFx } from './tool-fx';
-import { TOOLS } from './tools';
-import { createUi } from './ui';
-import { createWorldTheme } from './world-theme';
+} from './data/rules';
+import { THEMES } from './data/themes';
+import { TOOLS } from './data/tools';
+import { createFireworks } from './fx/fireworks';
+import { Debris, disposeMesh, makeZoneMesh, Particles, Puffs, Shake, Shockwaves, Sparks } from './fx/fx';
+import { createGemFx } from './fx/gem-fx';
+import { createToolFx } from './fx/tool-fx';
+import { createAimInput, createAimVisuals, MIN_CHARGE_SECONDS, TAP_SPEED_THRESHOLD } from './input/aim-input';
+import { createGrab, WHITE } from './input/grab';
+import { chargeTier } from './input/throw';
+import { type RemoteHost, startRemoteHost } from './remote/remote';
+import {
+  aimToScreen,
+  type HostMsg,
+  MAX_REMOTE_SLOTS,
+  ORBIT_TILT_SPEED,
+  ORBIT_YAW_SPEED,
+  REMOTE_SPEED_SCALE,
+  type RemoteMsg,
+} from './remote/remote-protocol';
+import { createRemoteSlotPanel } from './remote/remote-ui';
+import { blockTexture } from './render/marks';
+import { blockMaterial, boxGeo, hiddenMatrix, titleOutlineMat } from './render/materials';
+import {
+  addLights,
+  CATCH_FLOOR_Y,
+  ISLAND_RADIUS,
+  makeClouds,
+  makeContactShadow,
+  makeSky,
+} from './render/scene';
+import { createSkyEvents } from './render/sky-event';
+import { createWorldTheme } from './render/world-theme';
+import { createBalls } from './runtime/balls';
+import { createCameraRig } from './runtime/camera-runtime';
+import { createCharactersRuntime } from './runtime/characters-runtime';
+import {
+  type BallEntity,
+  type BlockEntity,
+  type CharacterEntity,
+  capture,
+  makeEntityBase,
+  type Owner,
+  type Phase,
+  speedOf,
+} from './runtime/entities';
+import { createLevelRuntime } from './runtime/level-runtime';
+import { createPhysicsStep } from './runtime/physics-step';
+import { levelBrief } from './ui/brief';
+import { createDebugPanel } from './ui/debug-panel';
+import { isTv } from './ui/device';
+import { createHudPanels, QUALITIES, type Quality } from './ui/hud-panels';
+import { startTranslating } from './ui/i18n';
+import { createUi } from './ui/ui';
 
 const STEP = 1 / 60;
 const MAX_STEPS_PER_FRAME = 5;
