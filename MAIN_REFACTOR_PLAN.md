@@ -28,7 +28,7 @@ step, zero behavior change. Tick boxes as steps land.
 - [x] 3. **fireworks.ts** — rockets array, celebrate(), updateFireworks().
 - [x] 4. **tool-fx.ts** — laser beam + hose jet: showBeam/castBeam/fireLaser,
   showJet/applyHose.
-- [ ] 5. **grab.ts** — pickBlock/beginGrab/applyGrabForce, grab highlight tint.
+- [x] 5. **grab.ts** — pickBlock/beginGrab/applyGrabForce, grab highlight tint.
 - [ ] 6. **aim-input.ts** (may split into input-capture.ts + trajectory.ts) — pointer/
   touch/keyboard capture, charge tiers, launch(), trajectory arc, aim/grab/beam
   preview. Depends on steps 1, 4, 5.
@@ -49,7 +49,7 @@ step, zero behavior change. Tick boxes as steps land.
 
 Execution handed to a background agent (one fork, all steps, committing as it goes).
 Update this checklist and the line below once it reports back.
-- Last known main.ts line count: 3081 (pre-refactor baseline)
+- Last known main.ts line count: 2491 (after step 5; 3081 was the pre-refactor baseline)
 - Manual browser smoke test (throw, grab, laser, hose, party mode) still required
   before this is trusted, per CLAUDE.md testing norms — automated gate is tsc+vitest
   only, no UI exercised during the mechanical move.
