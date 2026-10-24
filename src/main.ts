@@ -1065,7 +1065,7 @@ function closeRemotePanel() {
 }
 
 /** Show the QR panel and open the connection the first time it's needed. */
-function openRemotePanel() {
+function openRemotePanel(manual = false) {
   remotePanel.hidden = false;
   remoteBtn.setAttribute('aria-expanded', 'true');
   if (!remoteHost) {
@@ -1078,6 +1078,10 @@ function openRemotePanel() {
         closeRemotePanel();
       }
     });
+  } else if (manual) {
+    // reopened by hand: a phone may have navigated away without its connection noticing, so show
+    // every QR again rather than trust stale "connected" status (a still-open phone just re-identifies)
+    remoteConnected.fill(false);
   }
   remoteSlotPanel.forceRebuild(); // fresh QR codes and status, in case this isn't the first time
   remoteSlotPanel.refresh();
@@ -1089,7 +1093,7 @@ remoteBtn.addEventListener('click', (ev) => {
     closeRemotePanel();
     return;
   }
-  openRemotePanel();
+  openRemotePanel(true);
 });
 remotePanel.addEventListener('click', (ev) => ev.stopPropagation());
 // no keyboard/mouse on a TV: the QR goes up by itself, instead of waiting for a tap on remoteBtn
