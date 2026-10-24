@@ -23,7 +23,7 @@ step, zero behavior change. Tick boxes as steps land.
   grab); extracting them first avoids a circular-import tangle.
 - [x] 1. **camera-runtime.ts** — orbitCamera, frameCamera, intro fly-in
   (startIntro/updateIntro/skipIntro), touchpad swipe/pinch wheel handler.
-- [ ] 2. **crowd.ts** — buildCrowd/stepCrowd/updateCrowd/poof/bonk/sendHome/resetCrowd,
+- [x] 2. **crowd.ts** — buildCrowd/stepCrowd/updateCrowd/poof/bonk/sendHome/resetCrowd,
   spectator array. Distinct from `characters.ts` (data/specs).
 - [x] 3. **fireworks.ts** — rockets array, celebrate(), updateFireworks().
 - [ ] 4. **tool-fx.ts** — laser beam + hose jet: showBeam/castBeam/fireLaser,
