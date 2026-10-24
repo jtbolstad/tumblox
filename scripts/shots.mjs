@@ -18,6 +18,7 @@ const SHOTS = [
   ['gulch-21-cloud-nine', 20, 0],
   ['manor-25-zap-tower', 24, 0],
   ['manor-28-soak-it', 27, 0],
+  ['pirate-29-treasure-tower', 28, 0],
 ];
 
 mkdirSync(outDir, { recursive: true });

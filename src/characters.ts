@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
-import { box as sharpBox, cone, cyl, merge, type Part, p } from './props';
+import { cone, cyl, merge, type Part, p, box as sharpBox } from './props';
 import type { ThemeId } from './themes';
 
 /** Soft, bevelled blocks: rounder than a voxel, but still toy-like. Flat details stay sharp. */
@@ -26,6 +26,7 @@ export const CHARACTER_IDS = [
   'fox',
   'owl',
   'totem',
+  'human',
 ] as const;
 export type CharacterKind = (typeof CHARACTER_IDS)[number];
 
@@ -58,17 +59,37 @@ export const CHARACTERS: Record<CharacterKind, CharacterDef> = {
   pig: { name: 'Pig squire', size: [0.75, 0.85, 0.65], density: 0.8, voice: 0.9, hatted: true },
   armadillo: { name: 'Armadillo', size: [0.75, 0.75, 0.7], density: 0.9, voice: 0.85, hatted: true },
   bat: { name: 'Bat', size: [0.6, 0.65, 0.5], density: 0.3, voice: 1.8, hatted: true },
-  ghost: { name: 'Ghost', size: [0.7, 0.95, 0.6], density: 0.3, voice: 0.7, translucent: true, only: 'manor', hatted: true },
+  ghost: {
+    name: 'Ghost',
+    size: [0.7, 0.95, 0.6],
+    density: 0.3,
+    voice: 0.7,
+    translucent: true,
+    only: 'manor',
+    hatted: true,
+  },
   fox: { name: 'Fox', size: [0.6, 0.85, 0.6], density: 0.6, voice: 1.2, hatted: true },
   owl: { name: 'Owl', size: [0.6, 0.85, 0.55], density: 0.4, voice: 0.95, hatted: true },
-  totem: { name: 'Tiki totem', size: [0.6, 0.95, 0.55], density: 1.1, voice: 0.6, hatted: true, only: 'tiki' },
+  totem: {
+    name: 'Tiki totem',
+    size: [0.6, 0.95, 0.55],
+    density: 1.1,
+    voice: 0.6,
+    hatted: true,
+    only: 'tiki',
+  },
+  human: { name: 'Villager', size: [0.62, 0.95, 0.55], density: 0.75, voice: 1.0 },
 };
 
 /** Most different kinds of character on screen at once, level characters and crowd together. */
 export const MAX_KINDS_PER_SCENE = 5;
 
 /** The kinds a world's crowd is drawn from: no other world's exclusives, and at most 5 kinds with the level's own. */
-export function crowdKinds(theme: ThemeId, natives: CharacterKind[], levelKinds: CharacterKind[]): CharacterKind[] {
+export function crowdKinds(
+  theme: ThemeId,
+  natives: CharacterKind[],
+  levelKinds: CharacterKind[],
+): CharacterKind[] {
   const allowed = (k: CharacterKind) => !CHARACTERS[k].only || CHARACTERS[k].only === theme;
   const kinds = new Set<CharacterKind>(levelKinds);
   for (const k of [...natives, ...CHARACTER_IDS]) {
@@ -367,6 +388,24 @@ const LOOKS: Record<CharacterKind, () => Look> = {
     arm: [p(box(0.06, 0.34, 0.3), 0x6e5238, [0.03, -0.16, 0])],
     shoulder: [0.25, 0.1, -0.02],
   }),
+  // plain toy villager: a peg person in a tunic, dressed per-world by `costume`
+  human: () => ({
+    body: [
+      ...legs(0.46, 0.4, -0.47, 0.17, 0x5a4a3a),
+      p(box(0.5, 0.42, 0.42), 0x4f6db0, [0, -0.15, 0]),
+      p(box(0.52, 0.05, 0.44), 0x3a2a1a, [0, -0.3, 0]),
+    ],
+    head: [
+      p(box(0.34, 0.36, 0.32), 0xe0a872, [0, 0.21, 0]),
+      p(box(0.36, 0.1, 0.34), 0x4a2f22, [0, 0.38, -0.02]),
+      p(box(0.3, 0.05, 0.1), 0x4a2f22, [0, 0.14, 0.17]),
+    ],
+    eyes: eyes(0.09, 0.07),
+    neck: [0, 0.06, 0.04],
+    eyeAt: [0, 0.24, 0.16],
+    arm: arm(0x4f6db0, 0xe0a872, 0.26, 0.1),
+    shoulder: [0.3, 0.02, 0.02],
+  }),
 };
 
 interface Geometries {
@@ -467,6 +506,16 @@ function costume(theme: ThemeId, kind: CharacterKind, look: Look): { head: Part[
         head.push(p(cyl(hw * 0.37, hw * 0.37, 0.05, 8), 0x8a5ac8, [cx, top + 0.06, cz]));
       }
       body.push(p(box(bw * 0.9, 0.45, 0.04), 0x3a2a5a, [0, ny - 0.25, back - 0.02], [-0.12, 0, 0]));
+      break;
+    case 'pirate':
+      if (hat) {
+        head.push(p(box(hw * 1.3, 0.05, hw * 0.85), 0x262626, [cx, top + 0.02, cz]));
+        head.push(p(box(hw * 0.6, 0.14, hw * 0.46), 0x333333, [cx, top + 0.09, cz]));
+        head.push(p(box(hw * 0.64, 0.04, hw * 0.5), 0xc0504d, [cx, top + 0.03, cz]));
+      }
+      // sash and a dangling buckle, like a cutlass belt
+      body.push(p(box(bw * 0.6, 0.08, 0.03), 0xc0504d, [0, ny - 0.3, front + 0.015]));
+      body.push(p(box(0.08, 0.1, 0.035), 0xe8c66a, [bw * 0.1, ny - 0.3, front + 0.02]));
       break;
   }
   return { head, body };

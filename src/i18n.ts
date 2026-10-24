@@ -148,6 +148,7 @@ const NB: Record<string, string> = {
   'Castle Hill': 'Slottsbakken',
   'Dusty Gulch': 'Støvkløfta',
   'Spooky Manor': 'Spøkelsesgården',
+  'Pirate Cove': 'Pirat-vika',
   // tools
   Ball: 'Ball',
   'Heavy ball': 'Tung ball',
@@ -185,6 +186,9 @@ const NB: Record<string, string> = {
   'The Bridge': 'Broen',
   'Vanishing Act': 'Forsvinnings\u00ADnummer', // soft hyphen: the name wraps in the level tiles
   'Zap Tower': 'Zaptårnet',
+  'Treasure Tower': 'Skattetårnet',
+  'Powder Keg': 'Pulverfatet',
+  'Walk the Plank': 'Gå planken',
 };
 
 /** Character names, as the briefing uses them (lower case). */
@@ -200,6 +204,7 @@ const NB_CREATURE: Record<string, string> = {
   fox: 'reven',
   owl: 'ugla',
   'tiki totem': 'tikitotemet',
+  villager: 'landsbybeboeren',
 };
 
 const creature = (name: string) => NB_CREATURE[name] ?? name;

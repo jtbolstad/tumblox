@@ -84,8 +84,9 @@ Driven by the existing `theme` field in `src/level.ts`. Props are decoration onl
 | Castle Hill            | morning sky, green hill                 | banners, towers, drawbridge, hay bales             | recorder-and-lute jig in 6/8              |
 | Dusty Gulch            | hot orange sky, red rock mesa           | cacti, barrels, water tower, cow skull             | banjo hoedown in 2/4                      |
 | Spooky Manor           | purple night, moon                      | tombstones, pumpkins, dead trees, manor silhouette | minor harpsichord waltz with a "theremin" |
+| Pirate Cove            | overcast sky, sandy island in a teal sea | shipwreck, palms, barrels, treasure chests         | swung fiddle sea shanty over banjo        |
 - [x] Theme system: sky colours, island materials, light, pedestal, prop set, distant scenery (`src/themes.ts`, `src/props.ts`); music track and ambient sound bed per world moved to stage E
-- [x] All five themes; existing levels regrouped into worlds (Meadow 1–6, Tiki 7–12, Castle 13–18, Gulch 19–24, Manor 25–28); the Explore/Adventure structure in `docs/PLAN.md` Phase 2 is still open
+- [x] Six themes; existing levels regrouped into worlds (Meadow 1–6, Tiki 7–12, Castle 13–18, Gulch 19–24, Manor 25–28, Pirate Cove 29–31); the Explore/Adventure structure in `docs/PLAN.md` Phase 2 is still open
 - [x] World map with level isles instead of the card grid (moved here from stage F)
 
 ### D. Characters (cube animals)
@@ -99,6 +100,9 @@ Built in code from boxes (body, head, ears, eyes, snout): original, and no asset
 | Castle Hill  | pig squire            |
 | Dusty Gulch  | armadillo             |
 | Spooky Manor | bat, ghost-sheet blob |
+| Pirate Cove  | human villager        |
+
+A human villager (`human` in `CHARACTER_IDS`) now crowds every world, dressed in that world's hat/costume via `costume()` in `src/characters.ts`; in Pirate Cove it's the native species (tricorn hat, sash).
 - [x] Each character is one dynamic Rapier box body; child meshes carry a procedural animation state machine (`src/characters.ts`; knocked-over characters hop back onto their feet):
   - idle: bob, blink, look at the cursor or ball
   - alert: a ball is coming

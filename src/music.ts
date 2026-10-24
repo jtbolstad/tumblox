@@ -253,6 +253,48 @@ export const TRACKS: Record<ThemeId, Track> = {
     layer: { tom: 'x . . x . .', shaker: '. x . x . x' },
     inst: { lead: 'theremin', comp: 'harpsichord', bass: 'pluck' },
   },
+  // a rollicking sea shanty: swung fiddle over banjo chops and a tuba, stomped kick and shaker
+  pirate: {
+    step: 0.17,
+    swing: 0.28,
+    stepsPerBar: 6,
+    root: 69,
+    scale: MAJOR,
+    form: ['A', 'A', 'B', 'A'],
+    sections: {
+      A: {
+        chords: [1, 5, 1, 4, 1, 5, 4, 1],
+        lead: [
+          "5 3 5 1' 5 3",
+          '2 7, 2 5 2 7,',
+          "1' 5 3 5 1' 2'",
+          '7 5 2 7 5 .',
+          "5 3 5 1' 5 3",
+          "4 6 1' 6 4 6",
+          '2 5 7 2 5 7',
+          "1' - - 1 - .",
+        ],
+      },
+      B: {
+        chords: [4, 1, 5, 1, 4, 5, 1, 1],
+        lead: [
+          "6 4 6 1' 6 4",
+          "5 3 5 1' - 5",
+          '7 5 2 5 7 2',
+          "1' - 5 1' - .",
+          "4 6 1' 6 4 6",
+          "5 1' 3' 2' 1' 5",
+          '2 7, 5, 7, 2 5',
+          '1 - - - - .',
+        ],
+      },
+    },
+    bass: '1 . 5 . 1 .',
+    comp: 'x . x . x .',
+    drums: { kick: 'x . . x . .', shaker: 'x x x x x x', snare: '. . x . . x' },
+    layer: { tom: 'x x . x x .', hat: 'x . x x . x' },
+    inst: { lead: 'fiddle', comp: 'banjo', bass: 'tuba' },
+  },
 };
 
 export interface MusicNote {
@@ -449,7 +491,7 @@ let currentKey = 'meadow:0'; // "theme:variant" to detect actual changes
 
 /** Per-level flavour: root shift in semitones and step multiplier for each variant index. */
 const VARIANTS: [rootShift: number, stepScale: number][] = [
-  [0, 1.0],   // variant 0: same as the base track
+  [0, 1.0], // variant 0: same as the base track
   [-2, 0.94], // variant 1: a tone lower, slightly faster
   [+2, 1.07], // variant 2: a tone higher, a little slower
 ];

@@ -474,6 +474,25 @@ function ambienceTick() {
         tone(o.c, o.out, t + 0.5, 400, { type: 'sine', gain: 0.05, decay: 0.5, glideTo: 340 });
       }
       break;
+    case 'pirate':
+      // waves against the hull, with an occasional gull cry or creaking rope
+      if (roll < 0.4)
+        hiss(o.c, o.out, t, {
+          gain: 0.05,
+          attack: 1,
+          decay: 1.7,
+          filter: 'lowpass',
+          freq: 450,
+          sweepTo: 1300,
+        });
+      else if (roll > 0.92) {
+        const f = 1800 + Math.random() * 600;
+        tone(o.c, o.out, t, f, { type: 'sine', gain: 0.03, decay: 0.2, glideTo: f * 0.7 });
+        tone(o.c, o.out, t + 0.14, f * 0.9, { type: 'sine', gain: 0.025, decay: 0.2, glideTo: f * 0.6 });
+      } else if (roll > 0.88) {
+        tone(o.c, o.out, t, 220, { type: 'sawtooth', gain: 0.02, decay: 0.3, glideTo: 180 });
+      }
+      break;
   }
 }
 

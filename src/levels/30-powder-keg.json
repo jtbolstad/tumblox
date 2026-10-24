@@ -1,0 +1,56 @@
+{
+  "id": "powder-keg",
+  "name": "Powder Keg",
+  "theme": "pirate",
+  "tool": "bomb",
+  "throws": 4,
+  "goal": {
+    "type": "scoreTarget",
+    "target": 350
+  },
+  "medals": {
+    "bronze": 350,
+    "silver": 450,
+    "gold": 550
+  },
+  "blocks": [
+    {
+      "type": "wood",
+      "pos": [-0.5, 0.5, 0]
+    },
+    {
+      "type": "wood",
+      "pos": [0.5, 0.5, 0]
+    },
+    {
+      "type": "point",
+      "pos": [-0.5, 1.5, 0]
+    },
+    {
+      "type": "bomb",
+      "pos": [0.5, 1.5, 0]
+    },
+    {
+      "type": "point",
+      "pos": [-0.5, 2.5, 0]
+    },
+    {
+      "type": "point",
+      "pos": [0.5, 2.5, 0]
+    }
+  ],
+  "characters": [
+    {
+      "kind": "human",
+      "pos": [-2.3, 0, 1.6],
+      "role": "friend",
+      "rot": 0.5
+    },
+    {
+      "kind": "parrot",
+      "pos": [2.3, 0, 1.6],
+      "role": "decor",
+      "rot": -0.5
+    }
+  ]
+}

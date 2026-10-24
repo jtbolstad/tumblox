@@ -1,7 +1,7 @@
 import type { CharacterKind } from './characters';
 
 /** Worlds: each level's `theme` picks the sky, island, light and props around it. Block colours never change. */
-export const THEME_IDS = ['meadow', 'tiki', 'castle', 'gulch', 'manor'] as const;
+export const THEME_IDS = ['meadow', 'tiki', 'castle', 'gulch', 'manor', 'pirate'] as const;
 export type ThemeId = (typeof THEME_IDS)[number];
 
 export interface ThemeDef {
@@ -48,7 +48,7 @@ export const THEMES: Record<ThemeId, ThemeDef> = {
     cloud: 0xe4f1ff,
     arena: [0xc9c3e6, 0xb8e6d4, 0xf2c4ce, 0xf6d6b8, 0xc4e0f2],
     stageDark: 0.8,
-    crowd: ['goat', 'hen', 'fox', 'owl'],
+    crowd: ['goat', 'hen', 'fox', 'human'],
   },
   tiki: {
     name: 'Tiki Isle',
@@ -65,7 +65,7 @@ export const THEMES: Record<ThemeId, ThemeDef> = {
     arena: [0xf6d6a8, 0x9fe0d8, 0xf6b8a0, 0xfff0c8, 0xa8d8f0],
     arenaPlanks: true,
     stageDark: 0.8,
-    crowd: ['frog', 'parrot', 'totem', 'hen'],
+    crowd: ['frog', 'parrot', 'totem', 'human'],
   },
   castle: {
     name: 'Castle Hill',
@@ -83,7 +83,7 @@ export const THEMES: Record<ThemeId, ThemeDef> = {
     arena: [0xd2cdc0, 0xc4beb0, 0xdcd6c8, 0xbcb6a8, 0xcac6bc],
     arenaMasonry: true,
     stageDark: 0.3,
-    crowd: ['pig', 'goat', 'owl', 'hen'],
+    crowd: ['pig', 'goat', 'owl', 'human'],
   },
   gulch: {
     name: 'Dusty Gulch',
@@ -99,7 +99,7 @@ export const THEMES: Record<ThemeId, ThemeDef> = {
     arena: [0xd9985f, 0xe0b070, 0xc4704a, 0xe8cf9c, 0xa88060],
     arenaPlanks: true,
     stageDark: 0.3,
-    crowd: ['armadillo', 'fox', 'hen', 'goat'],
+    crowd: ['armadillo', 'fox', 'hen', 'human'],
   },
   manor: {
     name: 'Spooky Manor',
@@ -114,6 +114,23 @@ export const THEMES: Record<ThemeId, ThemeDef> = {
     cloud: 0x8a80b8,
     arena: [0x6a5a8a, 0x5a6a8a, 0x7a5a7a, 0x4a6a6a, 0x8a7aa0],
     stageDark: 0.3,
-    crowd: ['bat', 'ghost', 'owl', 'fox'],
+    crowd: ['bat', 'ghost', 'owl', 'human'],
+  },
+  pirate: {
+    name: 'Pirate Cove',
+    sky: { top: 0x1f6f78, horizon: 0xbfe8e0, bottom: 0x3f94a0 },
+    ground: 0xe3c88f,
+    earth: 0x6b5a4a,
+    deep: 0x3a2e24,
+    sun: { color: 0xfff0d0, intensity: 2.6 },
+    hemi: { sky: 0xcdeae8, ground: 0xd8c49a, intensity: 0.78 },
+    rim: 0x7fd9d0,
+    pedestal: 0x7a5230,
+    sea: 0x2f8f93,
+    cloud: 0xdfefe8,
+    arena: [0xd9b877, 0xc9a06a, 0xe3c88f, 0xb98a56, 0xcf9f68],
+    arenaPlanks: true,
+    stageDark: 0.5,
+    crowd: ['human', 'parrot', 'fox', 'hen'],
   },
 };

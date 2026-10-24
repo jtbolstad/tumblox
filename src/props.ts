@@ -311,6 +311,25 @@ const ironFence: Builder = () =>
   Array.from({ length: 7 }, (_, i) => p(cyl(0.04, 0.04, 1.2, 5), 0x2f2a36, [-1.2 + i * 0.4, 0.6, 0])).concat(
     p(box(2.6, 0.08, 0.08), 0x2f2a36, [0, 1, 0]),
   );
+/** A beached shipwreck: a tilted hull, a broken mast with a tattered sail, and a splintered spar. */
+const shipwreck: Builder = () => {
+  const len = 4.5;
+  return [
+    p(box(len, 0.9, 1.6), 0x6b4a2e, [0, 0.45, 0], [0, 0, 0.08]),
+    p(box(len * 0.9, 0.15, 1.7), 0x5a3d24, [0, 0.95, 0], [0, 0, 0.08]),
+    p(cyl(0.1, 0.14, 3.2), 0x5a3d24, [0.7, 2.0, 0], [0.15, 0, 0.3]),
+    p(box(1.1, 1.3, 0.04), 0xe8ddc0, [1.1, 2.6, 0], [0, 0, 0.3]),
+    p(cyl(0.06, 0.1, 1.4), 0x5a3d24, [-1.35, 1.1, 0.5], [0.3, 0, -0.4]),
+  ];
+};
+/** A banded treasure chest with a gold lock. */
+const treasureChest: Builder = () => [
+  p(box(0.9, 0.5, 0.6), 0x6e4a2c, [0, 0.25, 0]),
+  p(box(0.95, 0.12, 0.65), 0x4a3320, [0, 0.56, 0]),
+  p(box(0.08, 0.5, 0.65), 0xe8c66a, [-0.3, 0.25, 0]),
+  p(box(0.08, 0.5, 0.65), 0xe8c66a, [0.3, 0.25, 0]),
+  p(box(0.15, 0.1, 0.1), 0xe8c66a, [0, 0.45, 0.33]),
+];
 
 /** Props around the island: [builder, count]; the first entries are big and go at the back. */
 const PROP_SETS: Record<ThemeId, { back: [Builder, number][]; ring: [Builder, number][] }> = {
@@ -360,6 +379,16 @@ const PROP_SETS: Record<ThemeId, { back: [Builder, number][]; ring: [Builder, nu
       [pumpkin, 6],
       [deadTree, 3],
       [ironFence, 3],
+    ],
+  },
+  pirate: {
+    back: [[shipwreck, 1]],
+    ring: [
+      [palm, 5],
+      [barrel, 6],
+      [treasureChest, 2],
+      [rock, 4],
+      [skull, 2],
     ],
   },
 };
@@ -505,7 +534,9 @@ const ARENA_STYLES: Record<
       for (let i = 0; i < windows; i++) {
         const x = (i + 0.5 - windows / 2) * (w / windows);
         const lit = rand() < 0.7;
-        parts.push(p(box(0.55, 0.7, 0.06), lit ? 0xffc766 : 0x2a2018, [x, h * 0.72, d / 2 + 0.03], [0, 0, 0], lit));
+        parts.push(
+          p(box(0.55, 0.7, 0.06), lit ? 0xffc766 : 0x2a2018, [x, h * 0.72, d / 2 + 0.03], [0, 0, 0], lit),
+        );
         parts.push(p(box(0.7, 0.08, 0.08), wood, [x, h * 0.72 - 0.4, d / 2 + 0.04]));
       }
       return parts;
@@ -526,6 +557,26 @@ const ARENA_STYLES: Record<
         spikes.push(p(cone(0.06, 0.16, 5), 0xffc46b, [x, h + 0.38, -d / 2 + 0.3], [0, 0, 0], true));
       }
       return spikes;
+    },
+  },
+  // weathered crates lashed with rope, a lookout flag on some
+  pirate: {
+    bevel: 0.08,
+    lift: 0,
+    decor: (w, h, d, _c, rand) => {
+      const ropeColor = 0xcbb27a;
+      const span = Math.min(w, d) * 1.2;
+      const parts: Part[] = [
+        p(box(w + 0.1, 0.1, d + 0.1), 0x6e4a2c, [0, h + 0.05, 0]),
+        p(box(span, 0.05, 0.04), ropeColor, [0, h * 0.5, d / 2 + 0.02], [0, 0, Math.PI / 4]),
+        p(box(span, 0.05, 0.04), ropeColor, [0, h * 0.5, d / 2 + 0.02], [0, 0, -Math.PI / 4]),
+      ];
+      if (rand() < 0.4) {
+        const x = rand() < 0.5 ? -w / 2 + 0.25 : w / 2 - 0.25;
+        parts.push(p(cyl(0.04, 0.04, 1.1), 0x5a3d24, [x, h + 0.6, -d / 2 + 0.2]));
+        parts.push(p(box(0.5, 0.35, 0.03), 0x1f1f1f, [x + 0.25, h + 0.95, -d / 2 + 0.2]));
+      }
+      return parts;
     },
   },
 };
@@ -821,7 +872,10 @@ function backdrop(theme: ThemeId, rand: () => number): Part[] {
     const R = 54;
     const wallH = 13;
     const stone = [0x9a968c, 0xa7a39a, 0x8f8b82];
-    const pos = (k: number): [number, number] => [Math.cos((k / n) * Math.PI * 2) * R, Math.sin((k / n) * Math.PI * 2) * R];
+    const pos = (k: number): [number, number] => [
+      Math.cos((k / n) * Math.PI * 2) * R,
+      Math.sin((k / n) * Math.PI * 2) * R,
+    ];
     for (let k = 0; k < n; k++) {
       const [x, z] = pos(k);
       const [x2, z2] = pos(k + 1);
@@ -834,10 +888,25 @@ function backdrop(theme: ThemeId, rand: () => number): Part[] {
       const merlons = Math.floor(len / 3);
       for (let m = 0; m < merlons; m++) {
         const off = (m + 0.5 - merlons / 2) * 3;
-        parts.push(p(box(1.5, 1.3, 2.6), stone[(k + 1) % 3], [cx + Math.cos(yaw) * off, wallH + 0.65, cz - Math.sin(yaw) * off], [0, yaw, 0]));
+        parts.push(
+          p(
+            box(1.5, 1.3, 2.6),
+            stone[(k + 1) % 3],
+            [cx + Math.cos(yaw) * off, wallH + 0.65, cz - Math.sin(yaw) * off],
+            [0, yaw, 0],
+          ),
+        );
       }
       // a glowing arrow slit
-      parts.push(p(box(0.5, 2.2, 0.2), 0xffc766, [cx + Math.sin(yaw) * 1.25, wallH - 4, cz + Math.cos(yaw) * 1.25], [0, yaw, 0], true));
+      parts.push(
+        p(
+          box(0.5, 2.2, 0.2),
+          0xffc766,
+          [cx + Math.sin(yaw) * 1.25, wallH - 4, cz + Math.cos(yaw) * 1.25],
+          [0, yaw, 0],
+          true,
+        ),
+      );
     }
     for (let k = 0; k < n; k++) {
       const [x, z] = pos(k);
@@ -849,7 +918,15 @@ function backdrop(theme: ThemeId, rand: () => number): Part[] {
       parts.push(p(box(2.4, 1.4, 0.1), k % 2 ? 0xf2c230 : 0xffffff, [x + 1.3, h + 12, z]));
       for (const dy of [-5, -12]) {
         const a = Math.atan2(z, x);
-        parts.push(p(box(0.8, 1.6, 0.3), 0xffc766, [x - Math.cos(a) * 4.2, h + dy, z - Math.sin(a) * 4.2], [0, -a + Math.PI / 2, 0], true));
+        parts.push(
+          p(
+            box(0.8, 1.6, 0.3),
+            0xffc766,
+            [x - Math.cos(a) * 4.2, h + dy, z - Math.sin(a) * 4.2],
+            [0, -a + Math.PI / 2, 0],
+            true,
+          ),
+        );
       }
     }
   }
@@ -872,7 +949,10 @@ function backdrop(theme: ThemeId, rand: () => number): Part[] {
   const poles = night ? 12 : 0;
   const R = 44;
   const top = 15;
-  const at = (k: number): [number, number] => [Math.cos((k / poles) * Math.PI * 2) * R, Math.sin((k / poles) * Math.PI * 2) * R];
+  const at = (k: number): [number, number] => [
+    Math.cos((k / poles) * Math.PI * 2) * R,
+    Math.sin((k / poles) * Math.PI * 2) * R,
+  ];
   for (let k = 0; k < poles; k++) {
     const [x, z] = at(k);
     const [x2, z2] = at(k + 1);
@@ -889,7 +969,13 @@ function backdrop(theme: ThemeId, rand: () => number): Part[] {
       if (i % 2 === 0) {
         // a bunting flag hanging below, turned to face the island
         parts.push(
-          p(cone(0.45, 1.1, 3), colours[(k + i + 2) % colours.length], [bx, by - 0.8, bz], [0, -Math.atan2(bz, bx) + Math.PI / 2, Math.PI], true),
+          p(
+            cone(0.45, 1.1, 3),
+            colours[(k + i + 2) % colours.length],
+            [bx, by - 0.8, bz],
+            [0, -Math.atan2(bz, bx) + Math.PI / 2, Math.PI],
+            true,
+          ),
         );
       }
     }

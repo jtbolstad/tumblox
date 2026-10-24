@@ -60,6 +60,10 @@ export const QUIPS: Record<CharacterKind, Quip[]> = {
     ['The spirits are NOT pleased!', 'Åndene er IKKE fornøyde!'],
     ['Totem-ally unfair!', 'Totem-alt urettferdig!'],
   ],
+  human: [
+    ['Avast, watch the aim!', 'Akter, se på sikten!'],
+    ["That's gonna leave a block-shaped bruise.", 'Det blir et kloss-formet blåmerke.'],
+  ],
 };
 
 const MISSED: Quip[] = [

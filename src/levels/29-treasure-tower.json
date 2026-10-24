@@ -1,0 +1,81 @@
+{
+  "id": "treasure-tower",
+  "name": "Treasure Tower",
+  "theme": "pirate",
+  "tool": "ball",
+  "throws": 5,
+  "goal": {
+    "type": "toppleGems"
+  },
+  "medals": {
+    "bronze": 200,
+    "silver": 250,
+    "gold": 300
+  },
+  "blocks": [
+    {
+      "type": "normal",
+      "pos": [-0.5, 0.5, -0.5]
+    },
+    {
+      "type": "normal",
+      "pos": [-0.5, 0.5, 0.5]
+    },
+    {
+      "type": "normal",
+      "pos": [0.5, 0.5, -0.5]
+    },
+    {
+      "type": "normal",
+      "pos": [0.5, 0.5, 0.5]
+    },
+    {
+      "type": "normal",
+      "pos": [-0.5, 1.5, -0.5]
+    },
+    {
+      "type": "normal",
+      "pos": [-0.5, 1.5, 0.5]
+    },
+    {
+      "type": "normal",
+      "pos": [0.5, 1.5, -0.5]
+    },
+    {
+      "type": "normal",
+      "pos": [0.5, 1.5, 0.5]
+    },
+    {
+      "type": "normal",
+      "pos": [-0.5, 2.5, -0.5]
+    },
+    {
+      "type": "normal",
+      "pos": [-0.5, 2.5, 0.5]
+    },
+    {
+      "type": "normal",
+      "pos": [0.5, 2.5, -0.5]
+    },
+    {
+      "type": "normal",
+      "pos": [0.5, 2.5, 0.5]
+    },
+    {
+      "type": "gem",
+      "pos": [-0.5, 3.5, -0.5]
+    },
+    {
+      "type": "gem",
+      "pos": [0.5, 3.5, 0.5]
+    }
+  ],
+  "characters": [
+    {
+      "kind": "human",
+      "pos": [2.3, 0, 1.6],
+      "role": "decor",
+      "rot": -0.5
+    }
+  ]
+}
