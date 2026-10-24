@@ -445,11 +445,31 @@ let pending: Track | null = null;
 let nextTime = 0;
 let nextStep = 0;
 let excitedUntil = 0;
+let currentKey = 'meadow:0'; // "theme:variant" to detect actual changes
 
-/** Play a world's track; the switch waits for the next bar line so it lands on the beat. */
-export function setTrack(theme: ThemeId) {
-  const track = TRACKS[theme];
-  if (track !== current) pending = track;
+/** Per-level flavour: root shift in semitones and step multiplier for each variant index. */
+const VARIANTS: [rootShift: number, stepScale: number][] = [
+  [0, 1.0],   // variant 0: same as the base track
+  [-2, 0.94], // variant 1: a tone lower, slightly faster
+  [+2, 1.07], // variant 2: a tone higher, a little slower
+];
+
+/** Apply a root/tempo variant to a track; returns a shallow copy with modified root and step. */
+function applyVariant(track: Track, variant: number): Track {
+  const [rootShift, stepScale] = VARIANTS[variant % VARIANTS.length];
+  if (rootShift === 0 && stepScale === 1) return track;
+  return { ...track, root: track.root + rootShift, step: track.step * stepScale };
+}
+
+/**
+ * Play a world's track; the switch waits for the next bar line so it lands on the beat.
+ * `variant` (0–2) gives a subtle per-level flavour: different key and tempo.
+ */
+export function setTrack(theme: ThemeId, variant = 0) {
+  const key = `${theme}:${variant % VARIANTS.length}`;
+  if (key === currentKey) return;
+  currentKey = key;
+  pending = applyVariant(TRACKS[theme], variant);
 }
 
 /** A chain reaction is going: bring in the extra percussion for a few seconds. */
@@ -470,7 +490,7 @@ function tick() {
       current = pending;
       pending = null;
       nextStep = 0;
-      duckMusic(0.2, 0.6); // soften the seam between tracks
+      duckMusic(0.2, 0.6);
     }
     const excited = nextTime < excitedUntil;
     // swing: the off-beat steps land late, which gives the shuffle

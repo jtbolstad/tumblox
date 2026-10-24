@@ -20,6 +20,10 @@
       button.secondary { background: #219ebc; }
       #hud { position: fixed; top: 8px; left: 8px; right: 8px; display: flex; gap: 12px; align-items: center; flex-wrap: wrap; font-weight: 600; pointer-events: none; }
       #hud button { pointer-events: auto; padding: 6px 12px; }
+      /* one-finger orbit only matters with a touchscreen; a mouse already has a dedicated orbit button (right-click/drag) */
+      #orbit-btn { display: none; }
+      @media (pointer: coarse) { #orbit-btn { display: inline-block; } }
+      #orbit-btn[aria-pressed="true"] { outline: 3px solid var(--accent); outline-offset: -3px; }
       #hud > span:not(:empty) { background: rgba(255, 255, 255, 0.78); border-radius: 8px; padding: 3px 9px; } /* readable on dark night skies */
       #hud .goal { opacity: 0.8; }
       #hud .debug { display: none; font-weight: 400; opacity: 0.7; font-size: 0.85em; }
@@ -104,10 +108,14 @@
       .about-link { align-self: center; color: var(--ink); font-weight: 600; }
       #sound-panel { position: fixed; top: 52px; left: 8px; z-index: 5; display: grid; gap: 8px; background: var(--panel); border-radius: 12px; padding: 12px 14px; font-weight: 600; box-shadow: 0 6px 16px rgba(2, 48, 71, 0.25); }
       #sound-panel[hidden] { display: none; }
-      #remote-panel { position: fixed; top: 52px; left: 8px; z-index: 5; display: grid; justify-items: center; gap: 8px; width: 250px; background: var(--panel); border-radius: 12px; padding: 14px; font-weight: 600; text-align: center; box-shadow: 0 6px 16px rgba(2, 48, 71, 0.25); }
+      #remote-panel { position: fixed; top: 52px; left: 8px; z-index: 5; display: grid; justify-items: center; gap: 10px; width: min(92vw, 620px); background: var(--panel); border-radius: 12px; padding: 14px; font-weight: 600; text-align: center; box-shadow: 0 6px 16px rgba(2, 48, 71, 0.25); }
       #remote-panel[hidden] { display: none; }
       #remote-panel h3 { margin: 0; }
-      #remote-qr { border-radius: 8px; background: #fff; }
+      #remote-slots { display: flex; gap: 14px; flex-wrap: wrap; justify-content: center; }
+      .remote-slot { display: grid; justify-items: center; gap: 6px; width: 220px; }
+      .remote-slot canvas { border-radius: 8px; background: #fff; }
+      .remote-slot .slot-label { font-size: 0.95em; }
+      .remote-slot .slot-status { font-size: 0.85em; }
       #remote-panel .small { font-size: 0.8em; font-weight: 400; opacity: 0.8; margin: 0; }
       #sound-panel label { display: grid; grid-template-columns: 4.5em 1fr; align-items: center; gap: 10px; }
       #sound-panel input { width: 150px; accent-color: var(--accent); }
@@ -131,6 +139,7 @@
       <button type="button" id="mute-btn" class="secondary" aria-label="Toggle sound">🔊</button>
       <button type="button" id="sound-btn" class="secondary" aria-label="Sound settings" aria-expanded="false" aria-controls="sound-panel">🎚</button>
       <button type="button" id="quality-btn" class="secondary" aria-label="Graphics quality">High</button>
+      <button type="button" id="orbit-btn" class="secondary" aria-label="Toggle one-finger orbit" aria-pressed="false">🔄</button>
       <button type="button" id="remote-btn" class="secondary" aria-label="Phone remote" aria-expanded="false" aria-controls="remote-panel">📱</button>
       <button type="button" id="lang-btn" class="secondary" aria-label="Language">NO</button>
       <span id="level-name"></span>
@@ -177,10 +186,8 @@
     </div>
     <div id="remote-panel" hidden>
       <h3>Phone remote</h3>
-      <canvas id="remote-qr" width="220" height="220"></canvas>
-      <div id="remote-status">Scan with your phone</div>
-      <p class="small" id="remote-url" style="word-break: break-all"></p>
-      <p class="small">Hold the phone like a wand and point at the screen to aim. Swipe up on the phone to throw: a faster swipe throws harder.</p>
+      <div id="remote-slots"></div>
+      <p class="small">Hold the phone like a wand and point at the screen to aim. Swipe up on the phone to throw, or press and hold to charge power.</p>
     </div>
     <div id="banner" role="status" aria-live="polite" hidden></div>
     <div id="toast" role="status" aria-live="polite"></div>

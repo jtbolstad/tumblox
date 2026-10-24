@@ -189,7 +189,7 @@ Gate for each stage:
 ## Open questions
 
 - [ ] Should characters ever be the goal of whole levels (rescue stories), or stay an extra?
-- [x] Should music change per level or only per world? Per world (decided in stage E).
+- [x] Should music change per level or only per world? Revisited 2026-10-24: each level now applies a subtle key/tempo variant (`setTrack` in `src/music.ts`) on top of its world's track, so levels in the same world no longer sound identical.
 - [ ] Is the launch page part of this site or a separate repo?
 
 ## Sources

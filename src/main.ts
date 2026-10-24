@@ -93,8 +93,8 @@ import {
 import { THEMES, type ThemeId } from './themes';
 import { chargeTier, type PointerSample, powerTier, releaseVelocity } from './throw';
 import { lang, setLang, startTranslating } from './i18n';
-import { startRemoteHost, type RemoteHost } from './remote';
-import { aimToScreen, type HostMsg, REMOTE_SPEED_SCALE, type RemoteMsg } from './remote-protocol';
+import { drawRemoteQr, startRemoteHost, type RemoteHost } from './remote';
+import { aimToScreen, type HostMsg, MAX_REMOTE_SLOTS, REMOTE_SPEED_SCALE, type RemoteMsg } from './remote-protocol';
 import { missFor, quipFor } from './quips';
 import { titleLevel } from './title';
 import { TOOL_IDS, TOOLS, type ToolId } from './tools';
@@ -305,8 +305,10 @@ function buildArenaColliders(solids: Solid[]) {
   }
 }
 
-/** Switch sky, island, props, light and pedestal to a world. Cheap to call: does nothing if it is current. */
-function applyTheme(id: ThemeId) {
+/** Switch sky, island, props, light and pedestal to a world. Cheap to call: does nothing if already current.
+ *  `musicVariant` (0–2) selects a subtle per-level key/tempo flavour. */
+function applyTheme(id: ThemeId, musicVariant = 0) {
+  setTrack(id, musicVariant);
   if (id === themeId) return;
   themeId = id;
   const t = THEMES[id];
@@ -332,7 +334,6 @@ function applyTheme(id: ThemeId) {
   platformMat.map = blockTexture(t.pedestalStone ? 'immobile' : 'wood', false);
   platformMat.needsUpdate = true;
   renderer.shadowMap.needsUpdate = true;
-  setTrack(id);
   setAmbience(id);
 }
 
@@ -370,6 +371,17 @@ controls.maxPolarAngle = Math.PI / 2 - 0.05;
 controls.mouseButtons = { LEFT: -1 as THREE.MOUSE, MIDDLE: THREE.MOUSE.DOLLY, RIGHT: THREE.MOUSE.ROTATE };
 controls.touches = { ONE: -1 as THREE.TOUCH, TWO: THREE.TOUCH.DOLLY_ROTATE };
 controls.update();
+
+// a one-finger-orbit mode for phones/tablets, toggled by #orbit-btn: two fingers already
+// orbit+zoom, but reaching a stack to look behind it with just one thumb is awkward otherwise
+const orbitBtn = document.getElementById('orbit-btn') as HTMLButtonElement;
+let orbitMode = false;
+function setOrbitMode(on: boolean) {
+  orbitMode = on;
+  controls.touches.ONE = on ? THREE.TOUCH.ROTATE : (-1 as THREE.TOUCH);
+  orbitBtn.setAttribute('aria-pressed', String(on));
+}
+orbitBtn.addEventListener('click', () => setOrbitMode(!orbitMode));
 
 let quality: Quality = readQuality();
 
@@ -732,7 +744,8 @@ function loadLevel(index: number) {
   clearLevel();
   levelIndex = index;
   level = index === TITLE_INDEX ? titleScene : levels[index];
-  applyTheme(level.theme);
+  // a subtle per-level key/tempo flavour, so levels in the same world don't all sound identical
+  applyTheme(level.theme, index >= 0 ? index % 3 : 0);
   applyStageLight(index === TITLE_INDEX);
   applyProps(level.theme, Math.max(...level.platform.size) / 2, level.id);
   resetCrowd(); // back on their perches, and known to the collision lookup again (clearLevel emptied it)
@@ -1802,7 +1815,10 @@ const tierNames = ['tap', 'light', 'medium', 'full'];
 const raycaster = new THREE.Raycaster();
 let samples: PointerSample[] = [];
 let throwPointer: number | null = null;
+let pointerDownTime = 0; // ev.timeStamp when throwPointer went down, for press-and-hold charging
 const activeTouches = new Set<number>();
+const TAP_SPEED_THRESHOLD = 300; // px/s: below this a release counts as a held press, not a swipe
+const MIN_CHARGE_SECONDS = 0.15; // a held press shorter than this is just a tap, not a charge
 
 /** Least time between two throws, in ms. */
 const THROW_COOLDOWN = 2000;
@@ -1913,15 +1929,67 @@ function applyGrabForce() {
   e.body.applyImpulseAtPoint(grabAccel.multiplyScalar(e.body.mass() * STEP), grabPoint, true);
 }
 
-// ---------- phone remote: tilt aims, a swipe on the phone throws ----------
+// ---------- phone remote: tilt aims, a swipe on the phone throws; one phone per hot-seat player ----------
 const remoteBtn = document.getElementById('remote-btn') as HTMLElement;
 const remotePanel = document.getElementById('remote-panel') as HTMLElement;
-const remoteStatus = document.getElementById('remote-status') as HTMLElement;
-const remoteUrlText = document.getElementById('remote-url') as HTMLElement;
+const remoteSlotsEl = document.getElementById('remote-slots') as HTMLElement;
 let remoteHost: RemoteHost | null = null;
 let lastRemoteCheck = 0;
+const remoteConnected: boolean[] = Array(MAX_REMOTE_SLOTS).fill(false);
+let shownRemoteSlots = 0; // how many slot panels are currently built, so we rebuild only when it changes
 
-/** Buttons on the phone: the same actions as the on-screen ones. */
+/** How many phones can usefully connect right now: one per hot-seat player, or just one for solo play. */
+function activeSlotCount() {
+  return party ? party.players : 1;
+}
+
+/** Which slot's input currently controls the game: the player at the table, or slot 0 solo. */
+function activeRemoteSlot() {
+  return party ? party.current : 0;
+}
+
+/** Rebuild the QR panels to match the current player count (a party starting, ending, or changing size). */
+function refreshRemoteSlots() {
+  if (!remoteHost) return;
+  const count = activeSlotCount();
+  if (count === shownRemoteSlots) return;
+  shownRemoteSlots = count;
+  const host = remoteHost;
+  remoteSlotsEl.replaceChildren(
+    ...Array.from({ length: count }, (_, slot) => {
+      const box = document.createElement('div');
+      box.className = 'remote-slot';
+      const label = document.createElement('div');
+      label.className = 'slot-label';
+      label.textContent = count > 1 ? playerLabel(slot) : 'Scan with your phone';
+      const canvas = document.createElement('canvas');
+      canvas.width = 220;
+      canvas.height = 220;
+      drawRemoteQr(canvas, host.urlFor(slot));
+      const status = document.createElement('div');
+      status.className = 'slot-status';
+      box.append(label, canvas, status);
+      return box;
+    }),
+  );
+  updateRemoteSlotStatus();
+}
+
+function updateRemoteSlotStatus() {
+  const boxes = remoteSlotsEl.querySelectorAll<HTMLElement>('.remote-slot');
+  boxes.forEach((box, slot) => {
+    const status = box.querySelector('.slot-status');
+    if (!status) return;
+    status.textContent =
+      remoteHost?.unreachable && !remoteConnected[slot]
+        ? 'A phone cannot open localhost. Start the game with pnpm dev:phone and open the network address.'
+        : remoteConnected[slot]
+          ? 'Connected'
+          : 'Waiting for a phone…';
+  });
+}
+
+/** Buttons on the phone: the same actions as the on-screen ones. Any connected phone may use these. */
 function remoteCommand(m: RemoteMsg & { t: 'cmd' | 'select' }) {
   if (m.t === 'select') {
     if (m.index >= levels.length) return;
@@ -1936,13 +2004,14 @@ function remoteCommand(m: RemoteMsg & { t: 'cmd' | 'select' }) {
   else showTitle();
 }
 
-let remoteConnected = false;
 let remoteSent = '';
 let remoteLevelsSent = '';
 
-/** Keep the phone's buttons in step with the game: send the state whenever it changes (checked a few times a second). */
+/** Keep every connected phone's buttons in step with the game (checked a few times a second). */
 function updateRemoteState() {
-  if (!remoteConnected || !remoteHost) return;
+  if (!remoteHost) return;
+  if (!remotePanel.hidden) refreshRemoteSlots();
+  if (!remoteConnected.some(Boolean)) return;
   const current = levelIndex >= 0 ? level : null;
   const state: HostMsg = {
     t: 'state',
@@ -1957,11 +2026,13 @@ function updateRemoteState() {
       Math.round(params.flickMedium / REMOTE_SPEED_SCALE),
       Math.round(params.flickFull / REMOTE_SPEED_SCALE),
     ],
+    players: activeSlotCount(),
+    currentPlayer: activeRemoteSlot(),
   };
   const key = JSON.stringify(state);
   if (key !== remoteSent) {
     remoteSent = key;
-    remoteHost.send(state);
+    remoteHost.broadcast(state);
   }
   // the level list carries the medals, so it is resent when progress changes
   const progress = loadProgress();
@@ -1972,15 +2043,16 @@ function updateRemoteState() {
   const listKey = JSON.stringify(list);
   if (listKey !== remoteLevelsSent) {
     remoteLevelsSent = listKey;
-    remoteHost.send(list);
+    remoteHost.broadcast(list);
   }
 }
 
-function handleRemote(m: RemoteMsg) {
+function handleRemote(slot: number, m: Exclude<RemoteMsg, { t: 'identify' }>) {
   if (m.t === 'cmd' || m.t === 'select') {
     remoteCommand(m);
     return;
   }
+  if (slot !== activeRemoteSlot()) return; // not this phone's turn: its input does nothing
   if (introT < 1) {
     if (m.t === 'down') skipIntro();
     return;
@@ -2001,14 +2073,19 @@ function handleRemote(m: RemoteMsg) {
     }
     return;
   }
-  // the finger came up: stop spraying, let go, or throw with the swipe's speed
+  // the finger came up: stop spraying, let go, or throw with the swipe's speed (or, for a held
+  // press with little swipe, the hold time charges power the way holding Space does)
   if (spraying) {
     spraying = false;
     beam.visible = false;
   } else if (grab.entity) {
     grab.entity = null;
   } else if (!isGrabTool() && !isHoseTool()) {
-    launch(aim.x, aim.y, m.speed * REMOTE_SPEED_SCALE);
+    if (m.speed < TAP_SPEED_THRESHOLD && m.holdMs / 1000 >= MIN_CHARGE_SECONDS) {
+      launch(aim.x, aim.y, flickForTier(chargeTier(m.holdMs / 1000)));
+    } else {
+      launch(aim.x, aim.y, m.speed * REMOTE_SPEED_SCALE);
+    }
   }
 }
 
@@ -2016,25 +2093,17 @@ remoteBtn.addEventListener('click', (ev) => {
   ev.stopPropagation();
   remotePanel.hidden = !remotePanel.hidden;
   remoteBtn.setAttribute('aria-expanded', String(!remotePanel.hidden));
-  if (remotePanel.hidden || remoteHost) return;
+  if (remotePanel.hidden) return;
   // the connection is only opened once someone asks for the remote
-  remoteHost = startRemoteHost(
-    document.getElementById('remote-qr') as HTMLCanvasElement,
-    handleRemote,
-    (status) => {
-      remoteConnected = status === 'connected';
-      remoteSent = remoteLevelsSent = ''; // a new phone needs everything again
-      remoteUrlText.textContent = remoteHost?.url ?? '';
-      remoteStatus.textContent =
-        remoteHost?.unreachable && status !== 'connected'
-          ? 'A phone cannot open localhost. Start the game with pnpm dev:phone and open the network address.'
-          : status === 'connected'
-          ? 'Phone connected'
-          : status === 'waiting'
-            ? 'Waiting for a phone…'
-            : 'Could not reach the connection service';
-    },
-  );
+  if (!remoteHost) {
+    remoteHost = startRemoteHost(handleRemote, (slot, status) => {
+      remoteConnected[slot] = status === 'connected';
+      remoteSent = remoteLevelsSent = ''; // a reconnecting phone needs everything again
+      updateRemoteSlotStatus();
+    });
+  }
+  shownRemoteSlots = 0; // force a rebuild so the panel shows up to date QR codes and status
+  refreshRemoteSlots();
 });
 remotePanel.addEventListener('click', (ev) => ev.stopPropagation());
 
@@ -2101,6 +2170,7 @@ canvas.addEventListener('pointerdown', (ev) => {
   }
   if (ev.pointerType === 'touch') {
     activeTouches.add(ev.pointerId);
+    if (orbitMode) return; // one finger orbits instead of throwing; let OrbitControls handle it
     if (activeTouches.size > 1) {
       throwPointer = null; // second finger = orbit/pinch, cancel the throw
       grab.entity = null;
@@ -2117,6 +2187,7 @@ canvas.addEventListener('pointerdown', (ev) => {
     ui.hideBanner();
   }
   throwPointer = ev.pointerId;
+  pointerDownTime = ev.timeStamp;
   aim.visible = true;
   samples = [{ t: ev.timeStamp, x: ev.clientX, y: ev.clientY }];
   canvas.setPointerCapture(ev.pointerId);
@@ -2154,7 +2225,13 @@ function endPointer(ev: PointerEvent, doThrow: boolean) {
   if (!doThrow) return;
   samples.push({ t: ev.timeStamp, x: ev.clientX, y: ev.clientY });
   const flick = releaseVelocity(samples);
-  launch(ev.clientX, ev.clientY, flick.speed);
+  const heldSeconds = (ev.timeStamp - pointerDownTime) / 1000;
+  // barely any swipe: treat it as a held press and charge like the keyboard's Space bar
+  if (flick.speed < TAP_SPEED_THRESHOLD && heldSeconds >= MIN_CHARGE_SECONDS) {
+    launch(ev.clientX, ev.clientY, flickForTier(chargeTier(heldSeconds)));
+  } else {
+    launch(ev.clientX, ev.clientY, flick.speed);
+  }
 }
 canvas.addEventListener('pointerup', (ev) => endPointer(ev, true));
 canvas.addEventListener('pointercancel', (ev) => endPointer(ev, false));
@@ -2954,7 +3031,7 @@ requestAnimationFrame(frame);
   step: (n: number) => {
     for (let i = 0; i < n; i++) stepPhysics();
   },
-  remoteUrl: () => remoteHost?.url ?? null,
+  remoteUrl: () => remoteHost?.urlFor(0) ?? null,
   awake: () =>
     blocks.filter((e) => e.status !== 'removed' && BLOCKS[e.type].mobile && !e.body.isSleeping()).length,
   launch,

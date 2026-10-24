@@ -47,9 +47,15 @@ const NB: Record<string, string> = {
   'A phone cannot open localhost. Start the game with pnpm dev:phone and open the network address.':
     'En mobil kan ikke åpne localhost. Start spillet med pnpm dev:phone og åpne nettverksadressen.',
   'Phone connected': 'Mobil koblet til',
+  Connected: 'Koblet til',
   'Could not reach the connection service': 'Fikk ikke kontakt med koblingstjenesten',
   'Hold the phone like a wand and point at the screen to aim. Swipe up on the phone to throw: a faster swipe throws harder.':
     'Hold mobilen som en tryllestav og pek mot skjermen for å sikte. Sveip opp på mobilen for å kaste: raskere sveip gir hardere kast.',
+  'Hold the phone like a wand and point at the screen to aim. Swipe up on the phone to throw, or press and hold to charge power.':
+    'Hold mobilen som en tryllestav og pek mot skjermen for å sikte. Sveip opp på mobilen for å kaste, eller trykk og hold for å lade styrke.',
+  'Swipe to throw, or press and hold': 'Sveip for å kaste, eller trykk og hold',
+  'Tilt and turn the phone to aim. A faster swipe throws harder, or hold your finger down to charge.':
+    'Vipp og vri mobilen for å sikte. Raskere sveip gir hardere kast, eller hold fingeren nede for å lade.',
   'Tumble remote': 'Tumle-fjernkontroll',
   'Hold your phone like a wand and point it at the screen.': 'Hold mobilen som en tryllestav og pek den mot skjermen.',
   Connect: 'Koble til',
@@ -206,6 +212,8 @@ const PATTERNS: [RegExp, (...m: string[]) => string][] = [
   [/^Knock the (.+) off for a bonus$/, (_, name) => `Dytt ${creature(name)} av for bonus`],
   [/^Chain ×(\d+)!$/, (_, n) => `Kjede ×${n}!`],
   [/^(P\d)'s turn$/, (_, who) => `${who} sin tur`],
+  [/^(P\d)'s turn — wait for yours$/, (_, who) => `${who} sin tur — vent på din`],
+  [/^You are (P\d)\. Point at the screen\.$/, (_, who) => `Du er ${who}. Pek mot skjermen.`],
   [/^(P\d) toppled it!$/, (_, who) => `${who} veltet det!`],
   [/^(.+) wins!$/, (_, who) => `${who} vinner!`],
   [/^Tie: (.+)$/, (_, who) => `Uavgjort: ${who}`],

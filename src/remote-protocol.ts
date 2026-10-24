@@ -3,11 +3,17 @@
  * aim point and flick speed a mouse would give. Messages are small JSON objects over a WebRTC data channel.
  */
 export type RemoteMsg =
+  | { t: 'identify'; slot: number } // the first thing a phone sends: which player it is (0-based)
   | { t: 'aim'; yaw: number; pitch: number } // degrees away from the calibrated "straight ahead"
   | { t: 'down' } // a finger went down on the phone's pad
-  | { t: 'up'; speed: number } // it came up; `speed` is the swipe speed in px/s
+  // it came up; `speed` is the swipe speed in px/s, `holdMs` how long the finger was down
+  // (a held press with little swipe charges power the way holding Space does on the keyboard)
+  | { t: 'up'; speed: number; holdMs: number }
   | { t: 'cmd'; cmd: RemoteCommand } // a button on the phone
   | { t: 'select'; index: number }; // a level picked on the phone
+
+/** Phones can connect as any of these player slots; a hot-seat party has at most this many. */
+export const MAX_REMOTE_SLOTS = 4;
 
 export const REMOTE_COMMANDS = ['retry', 'next', 'menu', 'title'] as const;
 export type RemoteCommand = (typeof REMOTE_COMMANDS)[number];
@@ -24,6 +30,9 @@ export type HostMsg =
       hasNext: boolean;
       /** swipe speeds (px/s on the phone) where a throw becomes light, medium and full power */
       tiers: [number, number, number];
+      /** hot-seat party: how many players and whose turn it is (0-based); solo play is 1 and 0 */
+      players: number;
+      currentPlayer: number;
     }
   | { t: 'levels'; levels: { name: string; theme: string; medal: 'gold' | 'silver' | 'bronze' | null }[] };
 
@@ -56,11 +65,20 @@ export function parseRemoteMsg(data: unknown): RemoteMsg | null {
     return { t: 'aim', yaw: Math.max(-180, Math.min(180, m.yaw as number)), pitch: Math.max(-90, Math.min(90, m.pitch as number)) };
   }
   if (m.t === 'down') return { t: 'down' };
+  if (m.t === 'identify' && Number.isInteger(m.slot) && (m.slot as number) >= 0 && (m.slot as number) < MAX_REMOTE_SLOTS) {
+    return { t: 'identify', slot: m.slot as number };
+  }
   if (m.t === 'cmd' && (REMOTE_COMMANDS as readonly unknown[]).includes(m.cmd)) return { t: 'cmd', cmd: m.cmd as RemoteCommand };
   if (m.t === 'select' && Number.isInteger(m.index) && (m.index as number) >= 0 && (m.index as number) < 1000) {
     return { t: 'select', index: m.index as number };
   }
-  if (m.t === 'up' && num(m.speed)) return { t: 'up', speed: Math.max(0, Math.min(20000, m.speed as number)) };
+  if (m.t === 'up' && num(m.speed)) {
+    return {
+      t: 'up',
+      speed: Math.max(0, Math.min(20000, m.speed as number)),
+      holdMs: num(m.holdMs) ? Math.max(0, Math.min(10000, m.holdMs as number)) : 0,
+    };
+  }
   return null;
 }
 
@@ -81,6 +99,8 @@ export function parseHostMsg(data: unknown): HostMsg | null {
         Array.isArray(m.tiers) && m.tiers.length === 3 && m.tiers.every((n) => typeof n === 'number')
           ? (m.tiers as [number, number, number])
           : [1000, 2300, 5400],
+      players: typeof m.players === 'number' ? m.players : 1,
+      currentPlayer: typeof m.currentPlayer === 'number' ? m.currentPlayer : 0,
     };
   }
   if (m.t === 'levels' && Array.isArray(m.levels)) {

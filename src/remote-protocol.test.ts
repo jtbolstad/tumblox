@@ -31,7 +31,8 @@ describe('parseRemoteMsg', () => {
   it('accepts the three message kinds and clamps numbers', () => {
     expect(parseRemoteMsg({ t: 'aim', yaw: 10, pitch: -5 })).toEqual({ t: 'aim', yaw: 10, pitch: -5 });
     expect(parseRemoteMsg({ t: 'down' })).toEqual({ t: 'down' });
-    expect(parseRemoteMsg({ t: 'up', speed: 99999 })).toEqual({ t: 'up', speed: 20000 });
+    expect(parseRemoteMsg({ t: 'up', speed: 99999 })).toEqual({ t: 'up', speed: 20000, holdMs: 0 });
+    expect(parseRemoteMsg({ t: 'up', speed: 0, holdMs: 99999 })).toEqual({ t: 'up', speed: 0, holdMs: 10000 });
   });
 
   it('rejects junk', () => {

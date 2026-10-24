@@ -3,7 +3,7 @@ import '@fontsource-variable/fredoka';
 import Peer from 'peerjs';
 import { startTranslating, tr } from './i18n';
 import { type HostMsg, parseHostMsg, type RemoteMsg, wrapDeg } from './remote-protocol';
-import { type PointerSample, powerTier, releaseVelocity } from './throw';
+import { chargeTier, type PointerSample, powerTier, releaseVelocity } from './throw';
 
 const el = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 const status = el('status');
@@ -24,17 +24,18 @@ let state: State | null = null;
 let levelInfo: Extract<HostMsg, { t: 'levels' }>['levels'] = [];
 /** The power of a swipe in words: nobody knows what a number of pixels a second means. */
 const POWER_WORDS = ['Gentle toss', 'Light throw', 'Strong throw', 'Full power!'] as const;
-const power = (speed: number) => {
-  const tier = powerTier(speed, state?.tiers ?? [1000, 2300, 5400]);
-  return `${'●'.repeat(tier + 1)}${'○'.repeat(3 - tier)}  ${tr(POWER_WORDS[tier])}`;
-};
+const tierText = (tier: 0 | 1 | 2 | 3) => `${'●'.repeat(tier + 1)}${'○'.repeat(3 - tier)}  ${tr(POWER_WORDS[tier])}`;
+const power = (speed: number) => tierText(powerTier(speed, state?.tiers ?? [1000, 2300, 5400]));
 const MEDAL = { gold: '🥇', silver: '🥈', bronze: '🥉' } as const;
 
-const hostId = location.hash.slice(1);
+// the hash is "<hostId>:<slot>" for a party phone (one per player), or just "<hostId>" for solo play
+const [hostId, slotPart] = location.hash.slice(1).split(':');
+const mySlot = Number.parseInt(slotPart ?? '', 10) || 0;
 let conn: ReturnType<Peer['connect']> | null = null;
 let base: { alpha: number; beta: number } | null = null;
 let latest: { alpha: number; beta: number } | null = null;
 let lastSent = 0;
+let myTurn = true; // false while a hot-seat party is on another player's turn
 
 function send(m: RemoteMsg) {
   if (conn?.open) conn.send(m);
@@ -61,6 +62,7 @@ function onOrientation(e: DeviceOrientationEvent) {
   if (e.alpha === null || e.beta === null) return;
   latest = { alpha: e.alpha, beta: e.beta };
   base ??= latest;
+  if (!myTurn) return; // a hot-seat party: don't move the aim crosshair on someone else's turn
   const now = performance.now();
   if (now - lastSent < 30) return; // about 30 updates a second is plenty
   lastSent = now;
@@ -90,6 +92,7 @@ connectBtn.addEventListener('click', async () => {
       render();
     });
     conn.on('open', () => {
+      send({ t: 'identify', slot: mySlot });
       setStatus('Connected. Point at the screen.');
       connectBtn.hidden = true;
       pad.hidden = false;
@@ -113,13 +116,27 @@ centerBtn.addEventListener('click', () => {
   base = latest; // whatever the phone points at now is "straight ahead"
 });
 
-// the pad: a finger down, a swipe, and how fast it was going when it lifted
+// the pad: a finger down, then either a swipe (speed throws) or a held press (hold time charges,
+// just like holding Space on the keyboard)
 let samples: PointerSample[] = [];
+let padDownAt = 0;
+let chargeTimer: ReturnType<typeof setInterval> | undefined;
+const TAP_SPEED_THRESHOLD = 300; // px/s: below this a release counts as a held press, not a swipe
+
 pad.addEventListener('pointerdown', (ev) => {
+  if (!myTurn) return; // a hot-seat party: wait for this phone's player to come up
   pad.setPointerCapture(ev.pointerId);
   pad.classList.add('active');
   samples = [{ t: ev.timeStamp, x: ev.clientX, y: ev.clientY }];
+  padDownAt = ev.timeStamp;
   send({ t: 'down' });
+  clearInterval(chargeTimer);
+  chargeTimer = setInterval(() => {
+    // only show the charging power while the finger has not swiped yet
+    if (releaseVelocity(samples).speed < TAP_SPEED_THRESHOLD) {
+      speedBox.textContent = tierText(chargeTier((performance.now() - padDownAt) / 1000));
+    }
+  }, 60);
 });
 pad.addEventListener('pointermove', (ev) => {
   if (!pad.hasPointerCapture(ev.pointerId)) return;
@@ -128,13 +145,15 @@ pad.addEventListener('pointermove', (ev) => {
   speedBox.textContent = power(releaseVelocity(samples).speed);
 });
 function lift(ev: PointerEvent) {
+  clearInterval(chargeTimer);
   if (!pad.hasPointerCapture(ev.pointerId)) return;
   samples.push({ t: ev.timeStamp, x: ev.clientX, y: ev.clientY });
   const speed = releaseVelocity(samples).speed;
+  const holdMs = ev.timeStamp - padDownAt;
   pad.classList.remove('active');
   speedBox.textContent = speed > 0 ? power(speed) : '';
-  send({ t: 'up', speed });
-  if (speed > 300) navigator.vibrate?.(30);
+  send({ t: 'up', speed, holdMs });
+  if (speed > 300 || holdMs > 150) navigator.vibrate?.(30);
 }
 pad.addEventListener('pointerup', lift);
 pad.addEventListener('pointercancel', lift);
@@ -182,9 +201,14 @@ function render() {
   throwsBox.textContent = phase === 'playing' ? `${tr('Throws')}: ${state.throwsLeft}` : '';
   el('retry-btn').hidden = phase === 'title' || phase === 'menu';
   nextBtn.hidden = !(phase === 'won' && state.hasNext);
-  if (phase === 'won') setStatus('Level cleared!');
+  myTurn = state.players <= 1 || state.currentPlayer === mySlot;
+  pad.classList.toggle('waiting', phase === 'playing' && !myTurn);
+  if (phase === 'playing' && !myTurn) {
+    setStatus(`P${state.currentPlayer + 1}'s turn — wait for yours`);
+  } else if (phase === 'won') setStatus('Level cleared!');
   else if (phase === 'lost') setStatus('Out of throws');
   else if (phase === 'title' || phase === 'menu') setStatus('Pick a level');
+  else if (state.players > 1) setStatus(`You are P${mySlot + 1}. Point at the screen.`);
   else setStatus('Connected. Point at the screen.');
   // the game's own level list is open, or we are on the title: the phone offers the choice too
   if ((phase === 'menu' || phase === 'title') && picker.hidden && levelInfo.length > 0) openPicker();
