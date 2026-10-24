@@ -55,6 +55,8 @@ export function createRemoteSlotPanel(deps: {
           : remoteConnected[slot]
             ? 'Connected'
             : 'Waiting for a phone…';
+      // the QR has done its job once a phone is paired to this slot; drop it so the panel reads as progress
+      box.classList.toggle('connected', remoteConnected[slot]);
     });
   }
 
