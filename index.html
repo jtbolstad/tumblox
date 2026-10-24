@@ -51,7 +51,7 @@
       .isle .m { min-height: 1.2em; font-size: 0.8em; font-weight: 600; }
       .actions { display: flex; gap: 10px; justify-content: center; margin-top: 16px; flex-wrap: wrap; }
       .popup { --pop: #fb8500; position: fixed; transform: translate(-50%, -50%); font-weight: 900; font-size: 2em; color: #fff; text-shadow: 0 3px 0 var(--pop), 0 0 8px rgba(0, 0, 0, 0.45); pointer-events: none; animation: popup-rise 1.2s ease-out forwards; }
-      .bubble { position: fixed; transform: translate(-50%, -100%); max-width: 220px; padding: 8px 14px; background: #fff; color: #1d2433; font-weight: 800; font-size: 1.05em; line-height: 1.2; text-align: center; border: 3px solid #1d2433; border-radius: 16px; box-shadow: 0 4px 0 rgba(0, 0, 0, 0.25); pointer-events: none; animation: bubble 2.2s ease-out forwards; }
+      .bubble { position: fixed; transform: translate(-50%, -100%); max-width: 220px; padding: 8px 14px; background: #fff; color: #1d2433; font-weight: 800; font-size: 1.05em; line-height: 1.2; text-align: center; border: 3px solid #1d2433; border-radius: 16px; box-shadow: 0 4px 0 rgba(0, 0, 0, 0.25); pointer-events: none; animation: bubble 3.4s ease-out forwards; }
       .bubble::after { content: ''; position: absolute; left: 50%; bottom: -13px; width: 14px; height: 14px; background: #fff; border-right: 3px solid #1d2433; border-bottom: 3px solid #1d2433; transform: translateX(-50%) rotate(45deg); }
       @keyframes bubble { 0% { opacity: 0; transform: translate(-50%, -80%) scale(0.6); } 10% { opacity: 1; transform: translate(-50%, -100%) scale(1.08); } 16% { transform: translate(-50%, -100%) scale(1); } 80% { opacity: 1; } 100% { opacity: 0; transform: translate(-50%, -120%) scale(1); } }
       .popup.negative { --pop: #d81159; }
