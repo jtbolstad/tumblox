@@ -359,7 +359,7 @@ export function playVoice(line: VoiceLine, pitch: number, delay = 0) {
   const c = out();
   if (!c || !graph || volumes.voices === 0) return;
   const { vowel, syllables } = LINES[line];
-  const base = 260 * pitch;
+  const base = 520 * pitch; // an octave up from before: small, squeaky voices
   for (const [start, len, from, to] of syllables) {
     const at = c.currentTime + delay + start;
     const osc = c.createOscillator();

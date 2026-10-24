@@ -2,8 +2,8 @@
 import '@fontsource-variable/fredoka';
 import Peer from 'peerjs';
 import { startTranslating, tr } from './i18n';
-import { type RemoteMsg, wrapDeg } from './remote-protocol';
-import { type PointerSample, releaseVelocity } from './throw';
+import { type HostMsg, parseHostMsg, type RemoteMsg, wrapDeg } from './remote-protocol';
+import { type PointerSample, powerTier, releaseVelocity } from './throw';
 
 const el = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 const status = el('status');
@@ -11,6 +11,24 @@ const connectBtn = el<HTMLButtonElement>('connect');
 const pad = el('pad');
 const centerBtn = el('center');
 const speedBox = el('speed');
+const bar = el('bar');
+const levelName = el('level-name');
+const throwsBox = el('throws');
+const buttons = el('buttons');
+const nextBtn = el<HTMLButtonElement>('next-btn');
+const picker = el('picker');
+const levelList = el('level-list');
+
+type State = Extract<HostMsg, { t: 'state' }>;
+let state: State | null = null;
+let levelInfo: Extract<HostMsg, { t: 'levels' }>['levels'] = [];
+/** The power of a swipe in words: nobody knows what a number of pixels a second means. */
+const POWER_WORDS = ['Gentle toss', 'Light throw', 'Strong throw', 'Full power!'] as const;
+const power = (speed: number) => {
+  const tier = powerTier(speed, state?.tiers ?? [1000, 2300, 5400]);
+  return `${'●'.repeat(tier + 1)}${'○'.repeat(3 - tier)}  ${tr(POWER_WORDS[tier])}`;
+};
+const MEDAL = { gold: '🥇', silver: '🥈', bronze: '🥉' } as const;
 
 const hostId = location.hash.slice(1);
 let conn: ReturnType<Peer['connect']> | null = null;
@@ -64,11 +82,20 @@ connectBtn.addEventListener('click', async () => {
   const peer = new Peer();
   peer.on('open', () => {
     conn = peer.connect(hostId, { serialization: 'json' });
+    conn.on('data', (data) => {
+      const m = parseHostMsg(data);
+      if (!m) return;
+      if (m.t === 'state') state = m;
+      else levelInfo = m.levels;
+      render();
+    });
     conn.on('open', () => {
       setStatus('Connected. Point at the screen.');
       connectBtn.hidden = true;
       pad.hidden = false;
       centerBtn.hidden = false;
+      buttons.hidden = false;
+      bar.hidden = false;
       navigator.wakeLock?.request('screen').catch(() => undefined); // keep the phone awake while playing
     });
     conn.on('close', () => {
@@ -98,18 +125,69 @@ pad.addEventListener('pointermove', (ev) => {
   if (!pad.hasPointerCapture(ev.pointerId)) return;
   samples.push({ t: ev.timeStamp, x: ev.clientX, y: ev.clientY });
   if (samples.length > 64) samples.shift();
-  speedBox.textContent = `${Math.round(releaseVelocity(samples).speed)} px/s`;
+  speedBox.textContent = power(releaseVelocity(samples).speed);
 });
 function lift(ev: PointerEvent) {
   if (!pad.hasPointerCapture(ev.pointerId)) return;
   samples.push({ t: ev.timeStamp, x: ev.clientX, y: ev.clientY });
   const speed = releaseVelocity(samples).speed;
   pad.classList.remove('active');
-  speedBox.textContent = speed > 0 ? `${Math.round(speed)} px/s` : '';
+  speedBox.textContent = speed > 0 ? power(speed) : '';
   send({ t: 'up', speed });
   if (speed > 300) navigator.vibrate?.(30);
 }
 pad.addEventListener('pointerup', lift);
 pad.addEventListener('pointercancel', lift);
+
+// buttons: the same actions as the game's own screens
+function sendCmd(cmd: 'retry' | 'next' | 'menu' | 'title') {
+  send({ t: 'cmd', cmd });
+  navigator.vibrate?.(15);
+}
+el('retry-btn').addEventListener('click', () => sendCmd('retry'));
+nextBtn.addEventListener('click', () => sendCmd('next'));
+el('levels-btn').addEventListener('click', () => openPicker());
+el('picker-close').addEventListener('click', () => closePicker());
+
+function openPicker() {
+  levelList.replaceChildren(
+    ...levelInfo.map((l, i) => {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = state?.level === i ? 'current' : '';
+      const n = document.createElement('span');
+      n.className = 'n';
+      n.textContent = `${i + 1}${l.medal ? ` ${MEDAL[l.medal]}` : ''}`;
+      const name = document.createElement('span');
+      name.textContent = tr(l.name);
+      b.append(n, name);
+      b.addEventListener('click', () => {
+        send({ t: 'select', index: i });
+        closePicker();
+      });
+      return b;
+    }),
+  );
+  picker.hidden = false;
+}
+function closePicker() {
+  picker.hidden = true;
+}
+
+/** Show what the game is doing: level name, throws left, and only the buttons that make sense now. */
+function render() {
+  if (!state) return;
+  const { phase } = state;
+  levelName.textContent = state.name ? tr(state.name) : 'Tumble';
+  throwsBox.textContent = phase === 'playing' ? `${tr('Throws')}: ${state.throwsLeft}` : '';
+  el('retry-btn').hidden = phase === 'title' || phase === 'menu';
+  nextBtn.hidden = !(phase === 'won' && state.hasNext);
+  if (phase === 'won') setStatus('Level cleared!');
+  else if (phase === 'lost') setStatus('Out of throws');
+  else if (phase === 'title' || phase === 'menu') setStatus('Pick a level');
+  else setStatus('Connected. Point at the screen.');
+  // the game's own level list is open, or we are on the title: the phone offers the choice too
+  if ((phase === 'menu' || phase === 'title') && picker.hidden && levelInfo.length > 0) openPicker();
+}
 
 startTranslating();

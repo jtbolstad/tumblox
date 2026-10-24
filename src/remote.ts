@@ -1,12 +1,14 @@
 import Peer, { type DataConnection } from 'peerjs';
 import QRCode from 'qrcode';
-import { parseRemoteMsg, type RemoteMsg } from './remote-protocol';
+import { type HostMsg, parseRemoteMsg, type RemoteMsg } from './remote-protocol';
 
 export interface RemoteHost {
   /** the address the phone should open */
   url: string;
   /** true when the address still says localhost, which only works on this computer */
   unreachable: boolean;
+  /** Send something to the connected phone, if there is one. */
+  send(m: HostMsg): void;
   close(): void;
 }
 
@@ -31,6 +33,9 @@ export function startRemoteHost(
   const host: RemoteHost = {
     url: url.toString(),
     unreachable: ['localhost', '127.0.0.1', '[::1]'].includes(url.hostname),
+    send: (m) => {
+      if (current?.open) current.send(m);
+    },
     close: () => peer.destroy(),
   };
   let current: DataConnection | null = null;

@@ -94,7 +94,7 @@ import { THEMES, type ThemeId } from './themes';
 import { chargeTier, type PointerSample, powerTier, releaseVelocity } from './throw';
 import { lang, setLang, startTranslating } from './i18n';
 import { startRemoteHost, type RemoteHost } from './remote';
-import { aimToScreen, REMOTE_SPEED_SCALE, type RemoteMsg } from './remote-protocol';
+import { aimToScreen, type HostMsg, REMOTE_SPEED_SCALE, type RemoteMsg } from './remote-protocol';
 import { missFor, quipFor } from './quips';
 import { titleLevel } from './title';
 import { TOOL_IDS, TOOLS, type ToolId } from './tools';
@@ -1919,8 +1919,68 @@ const remotePanel = document.getElementById('remote-panel') as HTMLElement;
 const remoteStatus = document.getElementById('remote-status') as HTMLElement;
 const remoteUrlText = document.getElementById('remote-url') as HTMLElement;
 let remoteHost: RemoteHost | null = null;
+let lastRemoteCheck = 0;
+
+/** Buttons on the phone: the same actions as the on-screen ones. */
+function remoteCommand(m: RemoteMsg & { t: 'cmd' | 'select' }) {
+  if (m.t === 'select') {
+    if (m.index >= levels.length) return;
+    menuReturn = null;
+    startSolo(m.index);
+    ui.hideMenu();
+    return;
+  }
+  if (m.cmd === 'retry') restart();
+  else if (m.cmd === 'next') startSolo(Math.min(levelIndex + 1, levels.length - 1));
+  else if (m.cmd === 'menu') openMenu();
+  else showTitle();
+}
+
+let remoteConnected = false;
+let remoteSent = '';
+let remoteLevelsSent = '';
+
+/** Keep the phone's buttons in step with the game: send the state whenever it changes (checked a few times a second). */
+function updateRemoteState() {
+  if (!remoteConnected || !remoteHost) return;
+  const current = levelIndex >= 0 ? level : null;
+  const state: HostMsg = {
+    t: 'state',
+    phase: phase === 'menu' || phase === 'title' || phase === 'playing' || phase === 'won' || phase === 'lost' ? phase : 'playing',
+    level: current ? levelIndex : -1,
+    name: current?.name ?? '',
+    throwsLeft: current ? throwsLeft() : 0,
+    hasNext: !!current && !party && levelIndex < levels.length - 1,
+    // the phone shows the power as words, so it needs to know where each power level starts (in its own px/s)
+    tiers: [
+      Math.round(params.flickLight / REMOTE_SPEED_SCALE),
+      Math.round(params.flickMedium / REMOTE_SPEED_SCALE),
+      Math.round(params.flickFull / REMOTE_SPEED_SCALE),
+    ],
+  };
+  const key = JSON.stringify(state);
+  if (key !== remoteSent) {
+    remoteSent = key;
+    remoteHost.send(state);
+  }
+  // the level list carries the medals, so it is resent when progress changes
+  const progress = loadProgress();
+  const list: HostMsg = {
+    t: 'levels',
+    levels: levels.map((l) => ({ name: l.name, theme: l.theme, medal: progress[l.id]?.medal ?? null })),
+  };
+  const listKey = JSON.stringify(list);
+  if (listKey !== remoteLevelsSent) {
+    remoteLevelsSent = listKey;
+    remoteHost.send(list);
+  }
+}
 
 function handleRemote(m: RemoteMsg) {
+  if (m.t === 'cmd' || m.t === 'select') {
+    remoteCommand(m);
+    return;
+  }
   if (introT < 1) {
     if (m.t === 'down') skipIntro();
     return;
@@ -1962,6 +2022,8 @@ remoteBtn.addEventListener('click', (ev) => {
     document.getElementById('remote-qr') as HTMLCanvasElement,
     handleRemote,
     (status) => {
+      remoteConnected = status === 'connected';
+      remoteSent = remoteLevelsSent = ''; // a new phone needs everything again
       remoteUrlText.textContent = remoteHost?.url ?? '';
       remoteStatus.textContent =
         remoteHost?.unreachable && status !== 'connected'
@@ -2848,6 +2910,10 @@ function tick(now: number) {
   }
   updateAimPreview(now);
   updateGrabHighlight(now);
+  if (now - lastRemoteCheck > 250) {
+    lastRemoteCheck = now;
+    updateRemoteState();
+  }
   if (!spraying) jet.visible = false;
   sparkleGems(dt);
   updateCharacters(dt);
