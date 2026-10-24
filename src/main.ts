@@ -1059,6 +1059,11 @@ function handleRemote(slot: number, m: Exclude<RemoteMsg, { t: 'identify' }>) {
   }
 }
 
+function closeRemotePanel() {
+  remotePanel.hidden = true;
+  remoteBtn.setAttribute('aria-expanded', 'false');
+}
+
 /** Show the QR panel and open the connection the first time it's needed. */
 function openRemotePanel() {
   remotePanel.hidden = false;
@@ -1068,6 +1073,10 @@ function openRemotePanel() {
       remoteConnected[slot] = status === 'connected';
       remoteSent = remoteLevelsSent = ''; // a reconnecting phone needs everything again
       remoteSlotPanel.updateStatus();
+      // every phone this round needs is in: the QR panel has done its job, so get it out of the way
+      if (!remotePanel.hidden && remoteConnected.slice(0, activeSlotCount()).every(Boolean)) {
+        closeRemotePanel();
+      }
     });
   }
   remoteSlotPanel.forceRebuild(); // fresh QR codes and status, in case this isn't the first time
@@ -1077,8 +1086,7 @@ function openRemotePanel() {
 remoteBtn.addEventListener('click', (ev) => {
   ev.stopPropagation();
   if (!remotePanel.hidden) {
-    remotePanel.hidden = true;
-    remoteBtn.setAttribute('aria-expanded', 'false');
+    closeRemotePanel();
     return;
   }
   openRemotePanel();
