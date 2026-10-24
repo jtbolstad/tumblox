@@ -28,7 +28,9 @@
       .overlay[hidden] { display: none; }
       .panel { background: var(--panel); border-radius: 16px; padding: 20px; max-width: 760px; width: 100%; max-height: 100%; overflow: auto; box-sizing: border-box; text-align: center; }
       .panel h1, .panel h2 { margin: 0 0 12px; }
-      .worlds { display: flex; flex-direction: column; gap: 14px; text-align: left; }
+      /* two columns of worlds on a wide screen, so the whole list fits without a scrollbar */
+      #menu .panel { max-width: min(1180px, 100%); scrollbar-width: thin; }
+      .worlds { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 520px), 1fr)); gap: 12px; text-align: left; align-items: start; }
       .world { border-radius: 14px; padding: 12px 14px 18px; background: linear-gradient(to bottom, var(--sky-top), var(--sky-horizon)); }
       .world header { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; color: var(--title-ink); margin-bottom: 10px; }
       .world h2 { margin: 0; font-size: 1.3em; }
@@ -37,10 +39,14 @@
       .isle { display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 8px 6px 10px; color: var(--isle-ink); background: var(--ground); border-radius: 18px 18px 42% 42% / 18px 18px 30% 30%; box-shadow: 0 7px 0 var(--earth), 0 10px 10px rgba(2, 48, 71, 0.2); }
       .isle:hover:not(:disabled) { transform: translateY(-2px); }
       .isle .n { font-size: 1.4em; line-height: 1.1; }
-      .isle .name { font-size: 0.85em; font-weight: 600; }
+      .isle { min-width: 0; }
+      .isle .name { font-size: 0.85em; font-weight: 600; text-align: center; max-width: 100%; overflow-wrap: anywhere; hyphens: manual; }
       .isle .m { min-height: 1.2em; font-size: 0.8em; font-weight: 600; }
       .actions { display: flex; gap: 10px; justify-content: center; margin-top: 16px; flex-wrap: wrap; }
       .popup { --pop: #fb8500; position: fixed; transform: translate(-50%, -50%); font-weight: 900; font-size: 2em; color: #fff; text-shadow: 0 3px 0 var(--pop), 0 0 8px rgba(0, 0, 0, 0.45); pointer-events: none; animation: popup-rise 1.2s ease-out forwards; }
+      .bubble { position: fixed; transform: translate(-50%, -100%); max-width: 220px; padding: 8px 14px; background: #fff; color: #1d2433; font-weight: 800; font-size: 1.05em; line-height: 1.2; text-align: center; border: 3px solid #1d2433; border-radius: 16px; box-shadow: 0 4px 0 rgba(0, 0, 0, 0.25); pointer-events: none; animation: bubble 2.2s ease-out forwards; }
+      .bubble::after { content: ''; position: absolute; left: 50%; bottom: -13px; width: 14px; height: 14px; background: #fff; border-right: 3px solid #1d2433; border-bottom: 3px solid #1d2433; transform: translateX(-50%) rotate(45deg); }
+      @keyframes bubble { 0% { opacity: 0; transform: translate(-50%, -80%) scale(0.6); } 10% { opacity: 1; transform: translate(-50%, -100%) scale(1.08); } 16% { transform: translate(-50%, -100%) scale(1); } 80% { opacity: 1; } 100% { opacity: 0; transform: translate(-50%, -120%) scale(1); } }
       .popup.negative { --pop: #d81159; }
       @keyframes popup-rise {
         0% { opacity: 1; margin-top: 0; transform: translate(-50%, -50%) scale(0.4); }
@@ -73,14 +79,15 @@
       @keyframes toast { 0% { opacity: 0; } 12%, 70% { opacity: 1; } 100% { opacity: 0; } }
       #hint { position: fixed; bottom: 8px; left: 50%; transform: translateX(-50%); width: max-content; max-width: calc(100% - 16px); box-sizing: border-box; text-align: center; font-size: 0.8em; background: rgba(255, 255, 255, 0.7); border-radius: 8px; padding: 2px 10px; pointer-events: none; }
       @media (pointer: coarse) { #hint { display: none; } }
-      @media (prefers-reduced-motion: reduce) { .popup, #toast.show, #callout.show, .drop, #banner, #banner.leaving { animation-duration: 0.01s; } }
+      body:has(#menu:not([hidden])) #hint, body:has(#result:not([hidden])) #hint { display: none; } /* keys help is for playing, and it covered the level list */
+      @media (prefers-reduced-motion: reduce) { .popup, #toast.show, #callout.show, .drop, #banner, #banner.leaving, .bubble { animation-duration: 0.01s; } }
       .ball-icon { display: inline-block; width: 0.8em; height: 0.8em; border-radius: 50%; margin-right: 3px; vertical-align: -0.05em; box-shadow: inset -2px -3px 0 rgba(0, 0, 0, 0.2), 0 1px 2px rgba(0, 0, 0, 0.3); }
       #title { position: fixed; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: space-between; padding: 24px 16px 40px; box-sizing: border-box; pointer-events: none; }
       #title[hidden] { display: none; }
       #title img { width: min(820px, 94vw); filter: drop-shadow(0 6px 8px rgba(2, 48, 71, 0.25)); }
       #title .tagline { margin: 6px 0 0; font-weight: 600; font-size: 1.15em; color: #fff; text-shadow: 0 2px 6px rgba(0, 0, 0, 0.7); text-align: center; }
       @media (max-width: 700px) { #title { padding-top: 60px; } }
-      #title .bottom { margin-bottom: 4vh; display: flex; flex-direction: column; align-items: center; gap: 10px; }
+      #title .bottom { margin-bottom: 0.5vh; display: flex; flex-direction: column; align-items: center; gap: 10px; }
       #title button { pointer-events: auto; font-size: 2.4em; padding: 20px 72px; border-radius: 22px; box-shadow: 0 7px 0 #c96a00; }
       #title .try { font-size: 0.9em; color: #fff; opacity: 0.85; text-shadow: 0 2px 6px rgba(0, 0, 0, 0.7); }
       body.on-title #hud > :not(#mute-btn):not(#sound-btn):not(#quality-btn):not(#lang-btn) { display: none; }
@@ -90,7 +97,7 @@
         60% { opacity: 1; transform: translateY(0) rotate(8deg) scale(1.25); }
         100% { transform: translateY(0) rotate(0) scale(1); }
       }
-      body.capture #hud, body.capture #title, body.capture #hint, body.capture #callout, body.capture .popup, body.capture #toast { display: none; }
+      body.capture #hud, body.capture #title, body.capture #hint, body.capture #callout, body.capture .popup, body.capture .bubble, body.capture #toast { display: none; }
       .about-link { align-self: center; color: var(--ink); font-weight: 600; }
       #sound-panel { position: fixed; top: 52px; left: 8px; z-index: 5; display: grid; gap: 8px; background: var(--panel); border-radius: 12px; padding: 12px 14px; font-weight: 600; box-shadow: 0 6px 16px rgba(2, 48, 71, 0.25); }
       #sound-panel[hidden] { display: none; }

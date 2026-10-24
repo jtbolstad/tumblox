@@ -357,3 +357,170 @@ export class Debris {
     if (any) this.mesh.instanceMatrix.needsUpdate = true;
   }
 }
+
+/** A soft round dot, white in the middle fading to nothing, for glowing sparks. */
+export function sparkTexture() {
+  const canvas = document.createElement('canvas');
+  canvas.width = canvas.height = 64;
+  const g = canvas.getContext('2d');
+  if (g) {
+    const grad = g.createRadialGradient(32, 32, 0, 32, 32, 32);
+    grad.addColorStop(0, 'rgba(255,255,255,1)');
+    grad.addColorStop(0.25, 'rgba(255,255,255,0.85)');
+    grad.addColorStop(1, 'rgba(255,255,255,0)');
+    g.fillStyle = grad;
+    g.fillRect(0, 0, 64, 64);
+  }
+  return new THREE.CanvasTexture(canvas);
+}
+
+export type ShellKind = 'peony' | 'ring' | 'willow';
+
+/**
+ * Firework sparks: round glowing dots in additive blending that slow down with drag, sink a little and
+ * fade out, shedding short-lived trail dots as they fly. One pooled Points object.
+ */
+export class Sparks {
+  private readonly max: number;
+  private readonly positions: Float32Array;
+  private readonly colors: Float32Array;
+  private readonly base: Float32Array;
+  private readonly velocity: Float32Array;
+  private readonly life: Float32Array;
+  private readonly maxLife: Float32Array;
+  private readonly drag: Float32Array;
+  private readonly sheds: Uint8Array; // 1 = sheds trail dots as it flies
+  private readonly points: THREE.Points;
+  private next = 0;
+
+  constructor(scene: THREE.Scene, max = 7000) {
+    this.max = max;
+    this.positions = new Float32Array(max * 3).fill(-999);
+    this.colors = new Float32Array(max * 3);
+    this.base = new Float32Array(max * 3);
+    this.velocity = new Float32Array(max * 3);
+    this.life = new Float32Array(max);
+    this.maxLife = new Float32Array(max).fill(1);
+    this.drag = new Float32Array(max);
+    this.sheds = new Uint8Array(max);
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(this.positions, 3));
+    geo.setAttribute('color', new THREE.BufferAttribute(this.colors, 3));
+    this.points = new THREE.Points(
+      geo,
+      new THREE.PointsMaterial({
+        size: 0.45,
+        map: sparkTexture(),
+        vertexColors: true,
+        transparent: true,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false,
+        fog: false,
+      }),
+    );
+    this.points.frustumCulled = false;
+    scene.add(this.points);
+  }
+
+  /** One spark. `shed`: it leaves a trail behind it. */
+  emit(
+    at: THREE.Vector3,
+    vx: number,
+    vy: number,
+    vz: number,
+    color: THREE.Color,
+    life: number,
+    drag: number,
+    shed: boolean,
+  ) {
+    const i = this.next;
+    this.next = (this.next + 1) % this.max;
+    this.positions.set([at.x, at.y, at.z], i * 3);
+    this.velocity.set([vx, vy, vz], i * 3);
+    this.base.set([color.r, color.g, color.b], i * 3);
+    this.life[i] = this.maxLife[i] = life;
+    this.drag[i] = drag;
+    this.sheds[i] = shed ? 1 : 0;
+  }
+
+  /** A rocket's glowing tail: a few dots hanging in the air. */
+  tail(at: THREE.Vector3, color: THREE.Color) {
+    for (let n = 0; n < 2; n++) {
+      this.emit(at, (Math.random() - 0.5) * 0.8, -Math.random() * 1.5, (Math.random() - 0.5) * 0.8, color, 0.5 + Math.random() * 0.3, 1, false);
+    }
+  }
+
+  /** A shell bursting: dots flung out in a sphere (peony), a flat ring, or slow drooping gold (willow). */
+  burst(at: THREE.Vector3, kind: ShellKind, colors: readonly THREE.Color[], count: number, speed: number) {
+    const axisA = new THREE.Vector3(Math.random() - 0.5, Math.random() - 0.5, Math.random() - 0.5).normalize();
+    const axisB = new THREE.Vector3().crossVectors(axisA, new THREE.Vector3(0, 1, 0.3)).normalize();
+    for (let n = 0; n < count; n++) {
+      let x: number;
+      let y: number;
+      let z: number;
+      if (kind === 'ring') {
+        const a = (n / count) * Math.PI * 2;
+        const c = Math.cos(a);
+        const s = Math.sin(a);
+        const axisC = new THREE.Vector3().crossVectors(axisA, axisB);
+        x = axisB.x * c + axisC.x * s;
+        y = axisB.y * c + axisC.y * s;
+        z = axisB.z * c + axisC.z * s;
+      } else {
+        // uniform direction on a sphere
+        const u = Math.random() * 2 - 1;
+        const t = Math.random() * Math.PI * 2;
+        const r = Math.sqrt(1 - u * u);
+        x = r * Math.cos(t);
+        y = u;
+        z = r * Math.sin(t);
+      }
+      const s = speed * (kind === 'willow' ? 0.5 + Math.random() * 0.4 : 0.85 + Math.random() * 0.15);
+      const color = colors[kind === 'ring' ? 0 : n % colors.length];
+      this.emit(
+        at,
+        x * s,
+        y * s,
+        z * s,
+        color,
+        kind === 'willow' ? 2.4 + Math.random() * 0.8 : 1.3 + Math.random() * 0.7,
+        kind === 'willow' ? 1.4 : 2.2,
+        kind !== 'ring' || n % 2 === 0,
+      );
+    }
+  }
+
+  update(dt: number) {
+    const sink = 2.5; // sparks sag slowly: they are light
+    for (let i = 0; i < this.max; i++) {
+      if (this.life[i] <= 0) continue;
+      this.life[i] -= dt;
+      if (this.life[i] <= 0) {
+        this.positions[i * 3 + 1] = -999;
+        continue;
+      }
+      const damp = Math.max(0, 1 - this.drag[i] * dt);
+      for (let k = 0; k < 3; k++) {
+        this.velocity[i * 3 + k] *= damp;
+        this.positions[i * 3 + k] += this.velocity[i * 3 + k] * dt;
+      }
+      this.velocity[i * 3 + 1] -= sink * dt;
+      const f = this.life[i] / this.maxLife[i];
+      // bright at first, a twinkle near the end, then fading out
+      const k = f * f * (f < 0.35 && Math.random() < 0.3 ? 0.3 : 1);
+      this.colors[i * 3] = this.base[i * 3] * k;
+      this.colors[i * 3 + 1] = this.base[i * 3 + 1] * k;
+      this.colors[i * 3 + 2] = this.base[i * 3 + 2] * k;
+      if (this.sheds[i] === 1 && Math.random() < 14 * dt) {
+        tmpTrailAt.set(this.positions[i * 3], this.positions[i * 3 + 1], this.positions[i * 3 + 2]);
+        tmpTrailColor.setRGB(this.base[i * 3], this.base[i * 3 + 1], this.base[i * 3 + 2]);
+        this.emit(tmpTrailAt, 0, 0, 0, tmpTrailColor, 0.45 + Math.random() * 0.3, 3, false);
+      }
+    }
+    (this.points.geometry.getAttribute('position') as THREE.BufferAttribute).needsUpdate = true;
+    (this.points.geometry.getAttribute('color') as THREE.BufferAttribute).needsUpdate = true;
+  }
+}
+
+const tmpTrailAt = new THREE.Vector3();
+const tmpTrailColor = new THREE.Color();

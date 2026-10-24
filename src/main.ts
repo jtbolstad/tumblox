@@ -22,6 +22,7 @@ import {
   setMuted,
   setVolume,
   unlockAudio,
+  unlockOnFirstGesture,
 } from './audio';
 import { BLOCKS, type BlockType } from './blocks';
 import { levelBrief } from './brief';
@@ -34,7 +35,18 @@ import {
   moodFor,
   type Role,
 } from './characters';
-import { Debris, disposeMesh, makeZoneMesh, Particles, Puffs, Shake, Shockwaves } from './fx';
+import {
+  Debris,
+  disposeMesh,
+  makeZoneMesh,
+  Particles,
+  Puffs,
+  Shake,
+  Shockwaves,
+  type ShellKind,
+  Sparks,
+  sparkTexture,
+} from './fx';
 import { type Level, loadBundledLevels } from './level';
 import { blockTexture } from './marks';
 import { exciteMusic, initMusic, musicBeat, setTrack } from './music';
@@ -81,6 +93,7 @@ import {
 import { THEMES, type ThemeId } from './themes';
 import { chargeTier, type PointerSample, powerTier, releaseVelocity } from './throw';
 import { lang, setLang, startTranslating } from './i18n';
+import { missFor, quipFor } from './quips';
 import { titleLevel } from './title';
 import { TOOL_IDS, TOOLS, type ToolId } from './tools';
 import { createUi } from './ui';
@@ -122,7 +135,7 @@ const QUALITY_SETTINGS: Record<
   medium: { pixelRatio: 1.5, shadowMap: 1024, extras: true, crowd: 10 },
   high: { pixelRatio: 2, shadowMap: 2048, extras: true, crowd: 16 },
 };
-const SPARKLE_INTERVAL = 0.18; // s between gem glints
+const SPARKLE_INTERVAL = 0.07; // s between gem glints
 const DUST_SPEED = 4; // m/s impact that kicks up dust
 const SQUASH_SPEED = 4; // m/s ball hit that squashes the block
 const SQUASH_SECONDS = 0.18;
@@ -187,6 +200,8 @@ interface BallEntity extends Entity {
   age: number;
   tool: ToolId;
   exploding: boolean;
+  /** closest approach so far to each character; -1 once it has been remarked on */
+  nearest?: Map<CharacterEntity, number>;
 }
 
 type Blaster = BlockEntity | BallEntity;
@@ -239,6 +254,8 @@ let props: THREE.Group | null = null;
 let crowdSpots: Spot[] = [];
 let propsKey = '';
 let crowdSeed = 0;
+let windmillSails: THREE.Object3D[] = []; // turn slowly, around their own z axis
+const SAIL_SPEED = 0.3; // rad/s: a lazy turn every 20 seconds or so
 
 /** A small stable number from a string, to seed per-level randomness. */
 function hashString(text: string) {
@@ -260,6 +277,7 @@ function applyProps(id: ThemeId, pedestalHalf: number, levelId: string) {
   }
   const built = buildProps(id, half, crowdSeed % 100000);
   props = built.group;
+  windmillSails = built.sails;
   crowdSpots = built.spots;
   scene.add(props);
   buildArenaColliders(built.solids);
@@ -412,7 +430,8 @@ let platformCollider: RAPIER.Collider | null = null;
 let platformMesh: THREE.Mesh | null = null;
 let platformShadow: THREE.Mesh | null = null;
 const zoneMeshes: THREE.Mesh[] = [];
-const particles = new Particles(scene, 1400);
+const particles = new Particles(scene);
+const sparks = new Sparks(scene);
 const shake = new Shake();
 const smoke = new Puffs(scene, 160, THREE.NormalBlending);
 const glow = new Puffs(scene, 120, THREE.AdditiveBlending);
@@ -660,6 +679,7 @@ function clearLevel() {
     m.dispose();
   }
   blockMeshes.length = 0;
+  shinyMats.length = 0;
   for (const b of balls) removeBallBody(b);
   balls.length = 0;
   for (const c of chars) {
@@ -693,7 +713,7 @@ function loadLevel(index: number) {
   applyStageLight(index === TITLE_INDEX);
   applyProps(level.theme, Math.max(...level.platform.size) / 2, level.id);
   resetCrowd(); // back on their perches, and known to the collision lookup again (clearLevel emptied it)
-  fireworkQueue.length = 0;
+  rockets.length = 0;
   throwsUsed = 0;
   lastThrowAt = -Infinity;
   simTime = 0;
@@ -767,6 +787,7 @@ function loadLevel(index: number) {
       material.emissive.copy(material.color);
       material.emissiveIntensity = 0.15;
     }
+    if (SHINY[type] && material instanceof THREE.MeshStandardMaterial) shinyMats.push({ mat: material, type });
     const mesh = new THREE.InstancedMesh(boxGeo, material, count);
     mesh.castShadow = true;
     mesh.receiveShadow = true;
@@ -862,7 +883,7 @@ function getUpIfFallenOver(c: CharacterEntity) {
 
 function spawnCharacter(spec: Level['characters'][number], top: number) {
   const def = CHARACTERS[spec.kind];
-  const [w, h, d] = def.size;
+  const [w, h, d] = def.size.map((n) => n * spec.scale) as [number, number, number];
   const [x, y, z] = spec.pos;
   const body = world.createRigidBody(
     RAPIER.RigidBodyDesc.dynamic()
@@ -880,6 +901,7 @@ function spawnCharacter(spec: Level['characters'][number], top: number) {
   );
   body.sleep(); // like blocks, characters wait asleep until something hits them
   const rig = new CharacterRig(spec.kind, true, level.theme);
+  rig.root.scale.setScalar(spec.scale);
   scene.add(rig.root);
   const entity: CharacterEntity = {
     ...makeEntityBase(body, collider),
@@ -1280,7 +1302,7 @@ function handleImpacts() {
       if (isSpectator(e)) {
         if ([a, b].some((o) => o && 'tool' in o)) bonk(e); // only a ball hit counts as a bonk
       } else {
-        say(e, 'ouch');
+        hitReaction(e);
       }
     }
     const blocksHit = [a, b].filter(
@@ -1582,36 +1604,56 @@ function stepPhysics() {
   }
 }
 
-// ---------- fireworks: a big volley right in front of the camera when a level is cleared ----------
-const fireworkQueue: { at: number; colors: [number, number] }[] = [];
-const FIREWORK_COLORS = [0xff5d8f, 0xffd23f, 0x3da5ff, 0x57cc99, 0xff8c42, 0xb07cff, 0xffffff];
-const fireworkPos = new THREE.Vector3();
+// ---------- fireworks: rockets climb in front of the camera and burst into glowing sparks ----------
+interface Rocket {
+  /** when it lifts off, performance.now() */
+  at: number;
+  from: THREE.Vector3;
+  to: THREE.Vector3;
+  start: number | null;
+  kind: ShellKind;
+  colors: THREE.Color[];
+}
+const rockets: Rocket[] = [];
+const FIREWORK_COLORS = [0xff4d6d, 0xffd23f, 0x4dabff, 0x5eead4, 0xff8c42, 0xc084fc, 0xffffff, 0xa3e635];
+const ROCKET_SECONDS = 0.7;
 const fireworkAxis = new THREE.Vector3();
+const rocketAt = new THREE.Vector3();
+const rocketColor = new THREE.Color(0xffd9a0);
 
-function celebrate(bursts: number) {
+function celebrate(shells: number) {
   const now = performance.now();
-  const pick = () => FIREWORK_COLORS[Math.floor(Math.random() * FIREWORK_COLORS.length)];
-  for (let i = 0; i < bursts; i++) {
-    fireworkQueue.push({ at: now + 200 + i * 130 + Math.random() * 150, colors: [pick(), pick()] });
+  const pick = () => new THREE.Color(FIREWORK_COLORS[Math.floor(Math.random() * FIREWORK_COLORS.length)]);
+  const kinds: ShellKind[] = ['peony', 'peony', 'ring', 'willow'];
+  for (let i = 0; i < shells; i++) {
+    // a point in the view between the camera and the island; the rocket climbs to it from below
+    const to = new THREE.Vector3();
+    camera.getWorldDirection(to).multiplyScalar(6 + Math.random() * 9).add(camera.position);
+    fireworkAxis.set(1, 0, 0).applyQuaternion(camera.quaternion);
+    to.addScaledVector(fireworkAxis, (Math.random() - 0.5) * 14);
+    to.y += 1 + Math.random() * 5;
+    const from = to.clone();
+    from.y = Math.min(to.y - 6, level.platform.top);
+    from.x += (Math.random() - 0.5) * 2;
+    const kind = kinds[Math.floor(Math.random() * kinds.length)];
+    const colors = kind === 'willow' ? [new THREE.Color(0xffc857)] : [pick(), pick()];
+    rockets.push({ at: now + 150 + i * 170 + Math.random() * 200, from, to, start: null, kind, colors });
   }
 }
 
 function updateFireworks(now: number) {
-  for (let i = fireworkQueue.length - 1; i >= 0; i--) {
-    const f = fireworkQueue[i];
-    if (now < f.at) continue;
-    fireworkQueue.splice(i, 1);
-    // somewhere in the view, between the camera and the island, so the sparks fill the foreground
-    camera.getWorldDirection(fireworkPos);
-    fireworkPos.multiplyScalar(5 + Math.random() * 8).add(camera.position);
-    fireworkAxis.set(1, 0, 0).applyQuaternion(camera.quaternion);
-    fireworkPos.addScaledVector(fireworkAxis, (Math.random() - 0.5) * 12);
-    fireworkAxis.set(0, 1, 0).applyQuaternion(camera.quaternion);
-    fireworkPos.addScaledVector(fireworkAxis, (Math.random() - 0.3) * 6);
-    glow.emit(fireworkPos, { color: 0xfff1c1, size: [1.5, 6], life: 0.3, alpha: 1 });
-    particles.burst(fireworkPos, f.colors[0], 70, 8);
-    particles.burst(fireworkPos, f.colors[1], 40, 5);
-    if (Math.random() < 0.5) playScore('gem');
+  for (let i = rockets.length - 1; i >= 0; i--) {
+    const r = rockets[i];
+    if (now < r.at) continue;
+    r.start ??= now;
+    const t = Math.min((now - r.start) / (ROCKET_SECONDS * 1000), 1);
+    rocketAt.lerpVectors(r.from, r.to, 1 - (1 - t) ** 2); // slows as it climbs
+    sparks.tail(rocketAt, rocketColor);
+    if (t < 1) continue;
+    rockets.splice(i, 1);
+    glow.emit(r.to, { color: 0xfff1c1, size: [1.2, 5], life: 0.25, alpha: 0.9 });
+    sparks.burst(r.to, r.kind, r.colors, r.kind === 'ring' ? 60 : 150, r.kind === 'willow' ? 6 : 9);
+    if (Math.random() < 0.35) playBoom(); // a few thumps, not every shell
   }
 }
 
@@ -1739,10 +1781,11 @@ function applyGrabForce() {
   ndc.set((aim.x / innerWidth) * 2 - 1, -(aim.y / innerHeight) * 2 + 1);
   raycaster.setFromCamera(ndc, camera);
   const ray = raycaster.ray;
-  // intersect the pointer ray with the grip plane; a ray that never reaches it keeps the last target
-  if (ray.direction.y < -0.02) {
-    const t = Math.min((grab.planeY - ray.origin.y) / ray.direction.y, 80);
-    grabTarget.copy(ray.direction).multiplyScalar(t).add(ray.origin);
+  // intersect the pointer ray with the grip plane, whether the camera is above it (ray points down) or
+  // below it (ray points up); a ray that never reaches it keeps the last target
+  const reach = (grab.planeY - ray.origin.y) / ray.direction.y;
+  if (Number.isFinite(reach) && reach > 0) {
+    grabTarget.copy(ray.direction).multiplyScalar(Math.min(reach, 80)).add(ray.origin);
   }
 
   const r = e.body.rotation();
@@ -2032,26 +2075,54 @@ function launch(px: number, py: number, flickSpeed: number) {
 // ---------- aim preview: target ring + trajectory arc ----------
 const tierColors = [0xffffff, 0xffe066, 0xffa94d, 0xff5c5c];
 const ring = new THREE.Mesh(
-  new THREE.RingGeometry(0.35, 0.5, 32),
-  new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.9, depthTest: false }),
+  new THREE.RingGeometry(0.32, 0.56, 40),
+  new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 1, depthTest: false }),
 );
-ring.renderOrder = 10;
+ring.renderOrder = 11;
+// a dark ring around the bright one, so it reads against any background
+const ringEdge = new THREE.Mesh(
+  new THREE.RingGeometry(0.56, 0.72, 40),
+  new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.6, depthTest: false }),
+);
+ringEdge.renderOrder = 10;
+ring.add(ringEdge);
 ring.visible = false;
 scene.add(ring);
 
-const ARC_POINTS = 48;
-const ARC_DT = 0.05;
+const ARC_POINTS = 40;
+const ARC_DT = 0.06;
 const arcGeo = new THREE.BufferGeometry();
 arcGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(ARC_POINTS * 3), 3));
-const arcMat = new THREE.LineBasicMaterial({
+// the path is a string of round dots (a one-pixel line vanishes against the scene), each with a dark halo
+const dotTexture = sparkTexture();
+const arcMat = new THREE.PointsMaterial({
   color: 0xffffff,
+  size: 0.3,
+  map: dotTexture,
   transparent: true,
-  opacity: 0.8,
+  opacity: 1,
   depthTest: false,
+  depthWrite: false,
+  fog: false,
 });
-const arc = new THREE.Line(arcGeo, arcMat);
-arc.renderOrder = 10;
+const arcHaloMat = new THREE.PointsMaterial({
+  color: 0x000000,
+  size: 0.5,
+  map: dotTexture,
+  transparent: true,
+  opacity: 0.5,
+  depthTest: false,
+  depthWrite: false,
+  fog: false,
+});
+const arcHalo = new THREE.Points(arcGeo, arcHaloMat);
+arcHalo.renderOrder = 10;
+const arcDots = new THREE.Points(arcGeo, arcMat);
+arcDots.renderOrder = 11;
+const arc = new THREE.Group();
+arc.add(arcHalo, arcDots);
 arc.frustumCulled = false;
+arcHalo.frustumCulled = arcDots.frustumCulled = false;
 arc.visible = false;
 scene.add(arc);
 
@@ -2137,6 +2208,56 @@ const lookTarget = new THREE.Vector3();
 const toChar = new THREE.Vector3();
 const ballVel = new THREE.Vector3();
 
+const lastQuip = new WeakMap<CharacterEntity, number>();
+const MISS_SOUNDS = ['alert', 'yelp', 'boing'] as const;
+/** A ball counts as a near miss when its closest approach is between these distances (m, centre to centre). */
+const MISS_MIN = 0.95;
+const MISS_MAX = 2.4;
+
+function bubbleOver(c: CharacterEntity, text: string) {
+  bubblePos.copy(c.currPos);
+  bubblePos.y += CHARACTERS[c.kind].size[1] * 0.8;
+  bubblePos.project(camera);
+  if (bubblePos.z > 1) return;
+  ui.bubble(text, ((bubblePos.x + 1) / 2) * innerWidth, ((1 - bubblePos.y) / 2) * innerHeight);
+}
+
+/** A fast ball flew past close by without touching: "missed me!" */
+function updateNearMisses() {
+  if (balls.length === 0) return;
+  const bystanders = [...chars, ...crowd.map((s) => s.entity)];
+  for (const b of balls) {
+    if (b.exploding || speedOf(b.body) < 4) continue;
+    b.nearest ??= new Map();
+    for (const c of bystanders) {
+      const d = b.currPos.distanceTo(c.currPos);
+      const best = b.nearest.get(c) ?? Number.POSITIVE_INFINITY;
+      if (best < 0) continue;
+      if (d < best) {
+        b.nearest.set(c, d);
+      } else if (d > best + 0.1) {
+        b.nearest.set(c, -1); // moving away now: it has passed
+        const now = performance.now();
+        if (best < MISS_MIN || best > MISS_MAX || now - (lastQuip.get(c) ?? -1e9) < 2500) continue;
+        lastQuip.set(c, now);
+        playVoice(MISS_SOUNDS[Math.floor(Math.random() * MISS_SOUNDS.length)], CHARACTERS[c.kind].voice * (1 + Math.random() * 0.2));
+        bubbleOver(c, missFor(c.kind));
+      }
+    }
+  }
+}
+const HIT_VOICES = ['ouch', 'yelp', 'whoa', 'boing'] as const;
+const bubblePos = new THREE.Vector3();
+
+/** A character got hit: a funny noise and a speech bubble with a quip over its head. */
+function hitReaction(c: CharacterEntity) {
+  const now = performance.now();
+  if (now - (lastQuip.get(c) ?? -1e9) < 2500) return;
+  lastQuip.set(c, now);
+  playVoice(HIT_VOICES[Math.floor(Math.random() * HIT_VOICES.length)], CHARACTERS[c.kind].voice * (0.9 + Math.random() * 0.3));
+  bubbleOver(c, quipFor(c.kind));
+}
+
 function say(c: CharacterEntity, line: Parameters<typeof playVoice>[0]) {
   const now = performance.now();
   if (now - c.lastVoice < CHAR_VOICE_GAP || now - lastAnyVoice < ANY_VOICE_GAP) return;
@@ -2170,7 +2291,7 @@ function updateCharacters(dt: number) {
   for (const c of chars) {
     const w = c.body.angvel();
     const ball = incomingBall(c);
-    const mood = moodFor({
+    let mood = moodFor({
       result,
       role: c.role,
       speed: speedOf(c.body),
@@ -2178,6 +2299,7 @@ function updateCharacters(dt: number) {
       ballNear: ball !== null,
       shaking: nearbyBlocksMoving(c),
     });
+    if (phase === 'title' && mood === 'idle') mood = 'dance'; // the dancers on the title letters
     if (mood !== c.mood) {
       c.mood = c.rig.mood = mood;
       if (mood !== 'idle' && mood !== 'wave' && mood !== 'dance') say(c, mood);
@@ -2185,7 +2307,7 @@ function updateCharacters(dt: number) {
     // watch an incoming ball; otherwise look at the player (the camera)
     lookTarget.copy(ball ? ball.mesh.position : camera.position);
     c.rig.root.updateMatrixWorld();
-    c.rig.update(dt, c.rig.root.worldToLocal(lookTarget));
+    c.rig.update(dt, c.rig.root.worldToLocal(lookTarget), musicBeat() ?? (performance.now() / 1000) * 2);
   }
 }
 
@@ -2351,7 +2473,7 @@ function bonk(e: CharacterEntity) {
   const now = performance.now();
   if (!s || now - s.lastBonk < 1000) return;
   s.lastBonk = now;
-  say(e, 'ouch');
+  hitReaction(e);
   popupAt(e.currPos, 'Bonk!', false, '#ff8c42');
   playCrowd('cheer');
 }
@@ -2376,6 +2498,7 @@ function updateCrowd(dt: number) {
     if (!s.entity.body.isSleeping() && speedOf(s.entity.body) > 1.5) mood = 'tumble';
     else if (phase === 'won') mood = i % 3 === 0 ? 'cheer' : 'dance';
     else if (phase === 'lost') mood = 'sad';
+    else if (phase === 'title' && now >= crowdCheerUntil) mood = 'dance'; // the title is a party
     else if (now < crowdCheerUntil) mood = i % 4 === 0 ? 'wave' : 'cheer';
     else {
       if (now > s.nextChange) {
@@ -2396,21 +2519,44 @@ function updateCrowd(dt: number) {
 const sparklePos = new THREE.Vector3();
 let sparkleClock = 0;
 
-/** Now and then a white glint floats off a random gem, so gems read as precious at a glance. */
+/** The precious block types: they throb with light and throw off glints, in their own colours. */
+const SHINY: Partial<Record<BlockType, { glint: [number, number]; glow: [number, number] }>> = {
+  gem: { glint: [0xffffff, 0xbfe4ff], glow: [0.3, 0.8] },
+  point: { glint: [0xfff6c9, 0xffe066], glow: [0.1, 0.45] },
+};
+const shinyMats: { mat: THREE.MeshStandardMaterial; type: BlockType }[] = []; // every such material in play
+let gemClock = 0;
+
+/** Gems throb with light and throw off bright glints, so they read as precious at a glance. */
 function sparkleGems(dt: number) {
+  gemClock += dt;
+  const pulse = 0.5 + 0.5 * Math.sin(gemClock * 3.2);
+  for (const { mat, type } of shinyMats) {
+    const shiny = SHINY[type];
+    if (!shiny) continue;
+    mat.emissive.set(BLOCKS[type].color);
+    mat.emissiveIntensity = shiny.glow[0] + pulse * (shiny.glow[1] - shiny.glow[0]);
+  }
   if (!QUALITY_SETTINGS[quality].extras) return;
   sparkleClock += dt;
   if (sparkleClock < SPARKLE_INTERVAL) return;
   sparkleClock = 0;
-  const gems = blocks.filter((b) => b.type === 'gem' && b.status !== 'removed');
+  const gems = blocks.filter((b) => SHINY[b.type] && b.status !== 'removed');
   if (gems.length === 0) return;
   const gem = gems[Math.floor(Math.random() * gems.length)];
+  const colors = SHINY[gem.type]?.glint ?? [0xffffff, 0xffffff];
   sparklePos
     .set(Math.random() - 0.5, Math.random() - 0.5, Math.random() - 0.5)
     .multiply(gem.size)
     .multiplyScalar(1.1)
     .add(gem.currPos);
-  glow.emit(sparklePos, { color: 0xffffff, size: [0.35, 0.05], life: 0.6, alpha: 0.9 });
+  const big = Math.random() < 0.25; // now and then a big flash
+  glow.emit(sparklePos, {
+    color: colors[Math.random() < 0.5 ? 0 : 1],
+    size: big ? [0.9, 0.05] : [0.5, 0.05],
+    life: big ? 0.7 : 0.5,
+    alpha: 1,
+  });
 }
 
 const trailPos = new THREE.Vector3();
@@ -2468,6 +2614,7 @@ if (import.meta.env.PROD && 'serviceWorker' in navigator) {
 
 // ---------- main loop ----------
 initMusic();
+unlockOnFirstGesture();
 showTitle();
 startTranslating();
 
@@ -2510,10 +2657,13 @@ function tick(now: number) {
   updateAimPreview(now);
   sparkleGems(dt);
   updateCharacters(dt);
+  updateNearMisses();
   updateCrowd(dt);
   updateFireworks(now);
+  for (const sail of windmillSails) sail.rotation.z += SAIL_SPEED * dt;
   updateTrails();
   particles.update(fxDt, params.gravity);
+  sparks.update(fxDt);
   debris.update(fxDt, params.gravity);
   const pixelsPerUnit = renderer.domElement.height / (2 * Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)));
   smoke.update(fxDt, pixelsPerUnit);

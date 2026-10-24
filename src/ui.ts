@@ -251,6 +251,18 @@ export function createUi(handlers: UiHandlers) {
       node.addEventListener('animationend', () => node.remove());
       document.body.append(node);
     },
+    /** A speech bubble over a character; fades by itself. At most a few at a time. */
+    bubble(text: string, x: number, y: number) {
+      const live = document.querySelectorAll('.bubble');
+      if (live.length >= 3) return;
+      const node = document.createElement('div');
+      node.className = 'bubble';
+      node.textContent = text;
+      node.style.left = `${x}px`;
+      node.style.top = `${y}px`;
+      node.addEventListener('animationend', () => node.remove());
+      document.body.append(node);
+    },
     setStats(throwsLeft: number, score: number) {
       const throws = el('throws');
       if (countsBalls && throwsLeft > 0 && throwsLeft <= MAX_BALL_ICONS) {

@@ -1,6 +1,13 @@
 import * as THREE from 'three';
-import { box, cone, cyl, merge, type Part, p } from './props';
+import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
+import { box as sharpBox, cone, cyl, merge, type Part, p } from './props';
 import type { ThemeId } from './themes';
+
+/** Soft, bevelled blocks: rounder than a voxel, but still toy-like. Flat details stay sharp. */
+const box = (w: number, h: number, d: number) => {
+  const small = Math.min(w, h, d);
+  return small < 0.05 ? sharpBox(w, h, d) : new RoundedBoxGeometry(w, h, d, 3, small * 0.4);
+};
 
 /**
  * Cube animals that live on the levels. Each is one physics box; its look is built from boxes and
@@ -37,23 +44,23 @@ export interface CharacterDef {
   /** voice pitch multiplier */
   voice: number;
   translucent?: boolean;
-  /** already wears headwear (helmet, hat), so costumes skip the hat */
+  /** already wears headwear, or has horns or ears a hat would sit on, so costumes skip the hat */
   hatted?: boolean;
   /** only ever appears in this world (as spectator or in a level) */
   only?: ThemeId;
 }
 
 export const CHARACTERS: Record<CharacterKind, CharacterDef> = {
-  goat: { name: 'Goat', size: [0.7, 0.9, 0.6], density: 0.7, voice: 1 },
-  hen: { name: 'Hen', size: [0.6, 0.8, 0.55], density: 0.5, voice: 1.4 },
-  frog: { name: 'Frog', size: [0.8, 0.6, 0.65], density: 0.6, voice: 0.8 },
-  parrot: { name: 'Parrot', size: [0.55, 0.85, 0.55], density: 0.4, voice: 1.6 },
+  goat: { name: 'Goat', size: [0.7, 0.9, 0.6], density: 0.7, voice: 1, hatted: true },
+  hen: { name: 'Hen', size: [0.6, 0.8, 0.55], density: 0.5, voice: 1.4, hatted: true },
+  frog: { name: 'Frog', size: [0.8, 0.6, 0.65], density: 0.6, voice: 0.8, hatted: true },
+  parrot: { name: 'Parrot', size: [0.55, 0.85, 0.55], density: 0.4, voice: 1.6, hatted: true },
   pig: { name: 'Pig squire', size: [0.75, 0.85, 0.65], density: 0.8, voice: 0.9, hatted: true },
   armadillo: { name: 'Armadillo', size: [0.75, 0.75, 0.7], density: 0.9, voice: 0.85, hatted: true },
-  bat: { name: 'Bat', size: [0.6, 0.65, 0.5], density: 0.3, voice: 1.8 },
-  ghost: { name: 'Ghost', size: [0.7, 0.95, 0.6], density: 0.3, voice: 0.7, translucent: true, only: 'manor' },
-  fox: { name: 'Fox', size: [0.6, 0.85, 0.6], density: 0.6, voice: 1.2 },
-  owl: { name: 'Owl', size: [0.6, 0.85, 0.55], density: 0.4, voice: 0.95 },
+  bat: { name: 'Bat', size: [0.6, 0.65, 0.5], density: 0.3, voice: 1.8, hatted: true },
+  ghost: { name: 'Ghost', size: [0.7, 0.95, 0.6], density: 0.3, voice: 0.7, translucent: true, only: 'manor', hatted: true },
+  fox: { name: 'Fox', size: [0.6, 0.85, 0.6], density: 0.6, voice: 1.2, hatted: true },
+  owl: { name: 'Owl', size: [0.6, 0.85, 0.55], density: 0.4, voice: 0.95, hatted: true },
   totem: { name: 'Tiki totem', size: [0.6, 0.95, 0.55], density: 1.1, voice: 0.6, hatted: true, only: 'tiki' },
 };
 

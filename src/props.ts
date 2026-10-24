@@ -74,8 +74,15 @@ const fence: Builder = () => [
 const windmill: Builder = () => [
   p(cyl(0.9, 1.4, 5, 8), 0xf2e8d5, [0, 2.5, 0]),
   p(cone(1.2, 1.4, 8), 0xc0504d, [0, 5.7, 0]),
-  p(box(0.25, 5, 0.6), 0xd8c8a8, [0, 5, 1.1], [0, 0, 0.5]),
-  p(box(0.25, 5, 0.6), 0xd8c8a8, [0, 5, 1.1], [0, 0, 2.07]),
+  p(cyl(0.12, 0.12, 0.9, 6), 0x6e4a2c, [0, 5, 0.9], [Math.PI / 2, 0, 0]), // axle the sails turn on
+];
+/** Windmill sails around their own centre, which sits on the axle (local 0, 5, 1.1 of the windmill). */
+const windmillSails = (): Part[] => [
+  p(box(0.25, 5, 0.4), 0xd8c8a8, [0, 0, 0]),
+  p(box(5, 0.25, 0.4), 0xd8c8a8, [0, 0, 0]),
+  p(box(0.12, 4.2, 0.1), 0xb8a888, [0, 0, 0.25]),
+  p(box(4.2, 0.12, 0.1), 0xb8a888, [0, 0, 0.25]),
+  p(ball(0.32, 1), 0x8a5a3b, [0, 0, 0.1]),
 ];
 /** A coconut palm: a tall curved, ringed trunk tapering to a crown of drooping, segmented fronds. */
 const palm: Builder = (rand) => {
@@ -631,10 +638,12 @@ function islandProps(
   rand: () => number,
   tops: (Spot & { tier: number })[],
   pedestalHalf: number,
-): { parts: Part[]; free: Spot[] } {
+): { parts: Part[]; free: Spot[]; sails: THREE.Object3D[]; sailGroup: THREE.Group } {
   // a wide pedestal (the title) pushes loose props and ground spectators further out
   const clear = Math.max(CLEAR_RADIUS, pedestalHalf + 1.5);
   const parts: Part[] = [];
+  const sails: THREE.Object3D[] = [];
+  const sailGroup = new THREE.Group();
   const taken: [number, number][] = [];
   const free = (x: number, z: number, gap: number) =>
     taken.every(([tx, tz]) => Math.hypot(x - tx, z - tz) > gap);
@@ -662,7 +671,30 @@ function islandProps(
       });
       if (best < 0) continue;
       const [spot] = spots.splice(best, 1);
-      placeAll(parts, build(rand), spot.pos.x, spot.pos.y, spot.pos.z, rand() * Math.PI * 2, 0.8);
+      const built = build(rand);
+      const turn = rand() * Math.PI * 2;
+      placeAll(parts, built, spot.pos.x, spot.pos.y, spot.pos.z, turn, 0.8);
+      if (build === windmill) {
+        // the sails are their own mesh so they can turn: a pivot on the axle, facing the same way as the mill
+        const geo = merge(windmillSails());
+        if (geo) {
+          const pivot = new THREE.Group();
+          pivot.position.set(
+            spot.pos.x + Math.sin(turn) * 1.1 * 0.8,
+            spot.pos.y + 5 * 0.8,
+            spot.pos.z + Math.cos(turn) * 1.1 * 0.8,
+          );
+          pivot.rotation.y = turn;
+          pivot.scale.setScalar(0.8);
+          const mesh = new THREE.Mesh(
+            geo,
+            new THREE.MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: 0.9 }),
+          );
+          pivot.add(mesh);
+          sails.push(mesh);
+          sailGroup.add(pivot);
+        }
+      }
     }
   }
   for (const [build, total] of ring) {
@@ -693,7 +725,7 @@ function islandProps(
       spots.push({ pos: new THREE.Vector3(x, 0, z), face: faceCentre(x, z), ground: true, tier: -1 });
     }
   }
-  return { parts, free: spots };
+  return { parts, free: spots, sails, sailGroup };
 }
 
 /** A small floating island far away, optionally carrying a prop. */
@@ -990,7 +1022,7 @@ export function buildProps(
   theme: ThemeId,
   pedestalHalf: number,
   seed = 7,
-): { group: THREE.Group; spots: Spot[]; solids: Solid[] } {
+): { group: THREE.Group; spots: Spot[]; solids: Solid[]; sails: THREE.Object3D[] } {
   const rand = seeded(THEMES[theme].name.length * 131 + seed);
   const stands = arena(theme, rand);
   const island = islandProps(theme, rand, stands.tops, pedestalHalf);
@@ -1032,7 +1064,8 @@ export function buildProps(
     water.position.y = -0.7; // just under the island top, hiding the rocky underside
     group.add(water);
   }
-  return { group, spots: island.free, solids: stands.solids };
+  group.add(island.sailGroup);
+  return { group, spots: island.free, solids: stands.solids, sails: island.sails };
 }
 
 export function disposeGroup(group: THREE.Group) {

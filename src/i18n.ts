@@ -135,13 +135,13 @@ const NB: Record<string, string> = {
   'Jingle Bells': 'Bjelleklang',
   'Over the Wall': 'Over muren',
   Pinpoint: 'Blink treff',
-  'Power Wash': 'Høytrykksspyling',
+  'Power Wash': 'Høytrykks\u00ADspyling',
   'Pyramid Scheme': 'Pyramidespillet',
   'Soak It': 'Bløtlegg det',
   'Steel Wall': 'Stålmuren',
   'Tall Order': 'Stor oppgave',
   'The Bridge': 'Broen',
-  'Vanishing Act': 'Forsvinningsnummer',
+  'Vanishing Act': 'Forsvinnings\u00ADnummer', // soft hyphen: the name wraps in the level tiles
   'Zap Tower': 'Zaptårnet',
 };
 

@@ -65,6 +65,8 @@ export const levelSchema = z.object({
         role: z.enum(ROLES).default('decor'),
         /** turn around the vertical axis, radians; 0 faces the camera */
         rot: z.number().default(0),
+        /** size multiplier (the title's dancers are big) */
+        scale: z.number().positive().default(1),
       }),
     )
     .max(6)

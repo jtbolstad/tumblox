@@ -4,11 +4,11 @@
  * A trailing ' raises a note an octave, a trailing , lowers it. Each track has an A and a B section
  * played in a form such as AABA, so a loop lasts about a minute before it repeats.
  */
-import { duckMusic, musicOutput } from './audio';
+import { duckMusic, musicOutput, onAudioUnlocked } from './audio';
 import { fm, hiss, kick, midiToHz, pluck, tone } from './synth';
 import type { ThemeId } from './themes';
 
-type Lead = 'marimba' | 'pluck' | 'flute' | 'banjo' | 'theremin';
+type Lead = 'marimba' | 'pluck' | 'flute' | 'banjo' | 'theremin' | 'fiddle';
 type Comp = 'pluck' | 'marimba' | 'lute' | 'banjo' | 'harpsichord';
 type Bass = 'tuba' | 'bass' | 'pluck';
 type Drum = 'kick' | 'snare' | 'hat' | 'shaker' | 'log' | 'tom';
@@ -39,6 +39,8 @@ export interface Track {
   /** extra percussion that only plays while a chain reaction is going */
   layer: Partial<Record<Drum, string>>;
   inst: { lead: Lead; comp: Comp; bass: Bass };
+  /** western swing: odd steps are played late by this fraction of a step (0 = straight, ~0.33 = triplet shuffle) */
+  swing?: number;
 }
 
 const MAJOR = [0, 2, 4, 5, 7, 9, 11];
@@ -168,9 +170,10 @@ export const TRACKS: Record<ThemeId, Track> = {
     layer: { hat: 'x x x x x x', tom: 'x x x x . x' },
     inst: { lead: 'flute', comp: 'lute', bass: 'pluck' },
   },
-  // a hoedown: boom-chick tuba and banjo, brushed snare
+  // western swing: shuffled fiddle over banjo chops and a walking upright bass, brushed snare
   gulch: {
-    step: 0.135,
+    step: 0.19,
+    swing: 0.32,
     stepsPerBar: 8,
     root: 67,
     scale: MAJOR,
@@ -203,11 +206,11 @@ export const TRACKS: Record<ThemeId, Track> = {
         ],
       },
     },
-    bass: '1 . . . 5 . . .',
+    bass: '1 . 3 . 5 . 3 .',
     comp: '. . x . . . x .',
-    drums: { kick: 'x . . . x . . .', snare: '. . x . . . x .' },
-    layer: { hat: 'x x x x x x x x', shaker: '. x . x . x . x' },
-    inst: { lead: 'banjo', comp: 'banjo', bass: 'tuba' },
+    drums: { kick: 'x . . . x . . .', snare: '. . x . . . x .', shaker: 'x . x x x . x x' },
+    layer: { hat: 'x x x x x x x x', tom: '. . x . . . x .' },
+    inst: { lead: 'fiddle', comp: 'banjo', bass: 'bass' },
   },
   // a spooky waltz: harpsichord oom-pah-pah under a wobbling theremin
   manor: {
@@ -371,6 +374,25 @@ export function scheduleNote(c: BaseAudioContext, out: AudioNode, n: MusicNote, 
       return pluck(c, out, when, f, { gain: n.gain * 1.4, seconds: 0.8, damping: 0.497, bright: 0.5 });
     case 'banjo':
       return pluck(c, out, when, f, { gain: n.gain * 1.3, seconds: 0.5, damping: 0.495, bright: 1 });
+    case 'fiddle': {
+      // bowed: a quick scoop up into each note, then the note itself with vibrato and a slightly rough edge
+      tone(c, out, when, f * 0.944, {
+        type: 'sawtooth',
+        gain: n.gain * 0.3,
+        decay: 0.06,
+        attack: 0.01,
+        glideTo: f,
+        lowpass: 3000,
+      });
+      return tone(c, out, when + 0.05, f, {
+        type: 'sawtooth',
+        gain: n.gain * 0.55,
+        decay: Math.max(n.dur - 0.05, 0.25),
+        attack: 0.025,
+        vibrato: 0.009,
+        lowpass: 3200,
+      });
+    }
     case 'harpsichord':
       return pluck(c, out, when, f, { gain: n.gain * 1.4, seconds: 1, damping: 0.499, bright: 1 });
     case 'flute':
@@ -451,8 +473,10 @@ function tick() {
       duckMusic(0.2, 0.6); // soften the seam between tracks
     }
     const excited = nextTime < excitedUntil;
+    // swing: the off-beat steps land late, which gives the shuffle
+    const late = nextStep % 2 === 1 ? (current.swing ?? 0) * current.step : 0;
     for (const n of notesAt(current, nextStep))
-      if (!n.layer || excited) scheduleNote(o.c, o.out, n, nextTime);
+      if (!n.layer || excited) scheduleNote(o.c, o.out, n, nextTime + late);
     nextStep = (nextStep + 1) % loopSteps(current);
     nextTime += current.step;
   }
@@ -473,5 +497,8 @@ export function musicBeat(): number | null {
 
 /** Start the scheduler once; it stays silent until audio is unlocked and the music volume is up. */
 export function initMusic() {
-  if (timer === undefined) timer = setInterval(tick, 100);
+  if (timer === undefined) {
+    timer = setInterval(tick, 100);
+    onAudioUnlocked(tick); // start on the beat of the first gesture, not up to 100 ms later
+  }
 }

@@ -119,7 +119,29 @@ export function unlockAudio() {
       return;
     }
   }
-  if (ctx.state === 'suspended') void ctx.resume();
+  if (ctx.state === 'suspended') void ctx.resume().then(() => runningListeners.forEach((fn) => fn()));
+  else runningListeners.forEach((fn) => fn());
+}
+
+const runningListeners: (() => void)[] = [];
+
+/** Call `fn` whenever audio has just been unlocked (the first gesture), so music can start that instant. */
+export function onAudioUnlocked(fn: () => void) {
+  runningListeners.push(fn);
+}
+
+/**
+ * Browsers only let audio start after a gesture. Try right away (it works when the site is trusted),
+ * and otherwise unlock on the very first click, key or touch anywhere on the page.
+ */
+export function unlockOnFirstGesture() {
+  unlockAudio();
+  const events = ['pointerdown', 'keydown', 'touchstart', 'click'] as const;
+  const once = () => {
+    unlockAudio();
+    if (ctx?.state === 'running') for (const e of events) removeEventListener(e, once, true);
+  };
+  for (const e of events) addEventListener(e, once, true);
 }
 
 function out(): AudioContext | null {
@@ -284,7 +306,7 @@ export function playStinger(kind: 'win' | 'gold' | 'lose') {
 }
 
 // ---------- character voices: soft formant blips, not words ----------
-export type VoiceLine = 'alert' | 'panic' | 'tumble' | 'cheer' | 'sad' | 'ouch';
+export type VoiceLine = 'alert' | 'panic' | 'tumble' | 'cheer' | 'sad' | 'ouch' | 'yelp' | 'whoa' | 'boing';
 
 /** [first formant, second formant] in Hz: the vowel each line is "said" on. */
 const VOWELS = { o: [500, 900], i: [300, 2300], a: [750, 1200], e: [450, 1900], u: [350, 800] } as const;
@@ -312,6 +334,24 @@ const LINES: Record<
   },
   sad: { vowel: 'a', syllables: [[0, 0.4, 1, 0.7]] },
   ouch: { vowel: 'u', syllables: [[0, 0.1, 1.2, 0.8]] },
+  // funnier hit noises: a squeaky yelp, a sliding "whoa", a rubbery boing
+  yelp: {
+    vowel: 'i',
+    syllables: [
+      [0, 0.07, 1.4, 2.2],
+      [0.1, 0.07, 1.6, 2.4],
+      [0.2, 0.12, 2.2, 1.4],
+    ],
+  },
+  whoa: { vowel: 'o', syllables: [[0, 0.45, 1.8, 0.6]] },
+  boing: {
+    vowel: 'e',
+    syllables: [
+      [0, 0.1, 0.8, 1.8],
+      [0.12, 0.1, 1.8, 1],
+      [0.24, 0.14, 1, 2],
+    ],
+  },
 };
 
 /** A short creature noise; `pitch` scales the voice (small animals squeak higher). */
