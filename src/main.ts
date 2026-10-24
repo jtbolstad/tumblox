@@ -26,15 +26,17 @@ import {
 import { BLOCKS, type BlockType } from './blocks';
 import { levelBrief } from './brief';
 import { createCameraRig } from './camera-runtime';
+import { CHARACTERS, type CharacterKind, CharacterRig, crowdKinds, type Mood, moodFor } from './characters';
 import {
-  CHARACTERS,
-  type CharacterKind,
-  CharacterRig,
-  crowdKinds,
-  type Mood,
-  moodFor,
-  type Role,
-} from './characters';
+  type BallEntity,
+  type Blaster,
+  type BlockEntity,
+  type CharacterEntity,
+  type Entity,
+  makeEntityBase,
+  type Owner,
+  type Phase,
+} from './entities';
 import { createFireworks } from './fireworks';
 import {
   Debris,
@@ -74,7 +76,6 @@ import {
 } from './remote-protocol';
 import {
   type BlockState,
-  type BlockStatus,
   blockScore,
   CHAIN_WINDOW,
   type CharacterState,
@@ -175,58 +176,6 @@ const params = {
   grabMaxAccel: 50,
   restart: () => restart(),
 };
-
-interface Entity {
-  body: RAPIER.RigidBody;
-  collider: RAPIER.Collider;
-  prevPos: THREE.Vector3;
-  currPos: THREE.Vector3;
-  prevRot: THREE.Quaternion;
-  currRot: THREE.Quaternion;
-}
-
-interface BlockEntity extends Entity {
-  type: BlockType;
-  status: BlockStatus;
-  mesh: THREE.InstancedMesh;
-  instance: number; // index into the per-type InstancedMesh
-  size: THREE.Vector3;
-  exploding: boolean;
-  hitsLeft: number; // vanish blocks: hard hits remaining
-  lastHit: number; // sim time of the last counted hit, so one impact is not counted per contact
-  note: number; // jingle blocks: index into JINGLE_NOTES, so a row plays a tune
-  multiplier: number; // zone multiplier at its current floor position
-  startPos: THREE.Vector3; // where the level placed it, to measure Jenga pulls and collapse
-  grabbedOnce: boolean;
-  squash: number; // 1 right after a hard ball hit, decays to 0 (visual only)
-}
-
-interface BallEntity extends Entity {
-  mesh: THREE.Mesh;
-  age: number;
-  tool: ToolId;
-  exploding: boolean;
-  /** closest approach so far to each character; -1 once it has been remarked on */
-  nearest?: Map<CharacterEntity, number>;
-}
-
-type Blaster = BlockEntity | BallEntity;
-
-interface CharacterEntity extends Entity {
-  kind: CharacterKind;
-  role: Role;
-  status: 'alive' | 'fallen';
-  rig: CharacterRig;
-  mood: Mood;
-  lastVoice: number; // performance.now() of its last line, to keep chatter down
-  tiltedFor: number; // s spent lying on its side at rest; it hops back up after a moment
-}
-
-/** Anything a collider can belong to. */
-type Owner = Blaster | CharacterEntity;
-
-/** title: the knock-down logo scene, free throws and no goal. */
-type Phase = 'title' | 'menu' | 'playing' | 'won' | 'lost';
 
 await RAPIER.init();
 
@@ -491,14 +440,6 @@ function blockMaterial(type: BlockType) {
   });
   blockMats.set(type, mat);
   return mat;
-}
-
-function makeEntityBase(body: RAPIER.RigidBody, collider: RAPIER.Collider): Entity {
-  const t = body.translation();
-  const r = body.rotation();
-  const pos = new THREE.Vector3(t.x, t.y, t.z);
-  const rot = new THREE.Quaternion(r.x, r.y, r.z, r.w);
-  return { body, collider, prevPos: pos.clone(), currPos: pos, prevRot: rot.clone(), currRot: rot };
 }
 
 // ---------- game state ----------

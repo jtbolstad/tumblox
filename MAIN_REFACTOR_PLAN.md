@@ -17,6 +17,10 @@ step, zero behavior change. Tick boxes as steps land.
 
 ## Steps
 
+- [x] 0. **entities.ts** (not in the original guess) — Entity/BlockEntity/BallEntity/
+  Blaster/CharacterEntity/Owner/Phase types and makeEntityBase() move out of main.ts.
+  They're shared by nearly every later step (crowd, characters-runtime, physics-step,
+  grab); extracting them first avoids a circular-import tangle.
 - [x] 1. **camera-runtime.ts** — orbitCamera, frameCamera, intro fly-in
   (startIntro/updateIntro/skipIntro), touchpad swipe/pinch wheel handler.
 - [ ] 2. **crowd.ts** — buildCrowd/stepCrowd/updateCrowd/poof/bonk/sendHome/resetCrowd,
