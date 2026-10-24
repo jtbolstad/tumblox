@@ -24,6 +24,8 @@ export interface ThemeDef {
   cloud: number;
   /** soft colours of the giant blocks that ring the play area like stadium seating */
   arena: number[];
+  /** arena blocks are built of stone bricks rather than painted smooth */
+  arenaMasonry?: boolean;
   /** who comes to watch */
   crowd: CharacterKind[];
 }
@@ -70,7 +72,9 @@ export const THEMES: Record<ThemeId, ThemeDef> = {
     pedestal: 0xb9b4a8,
     pedestalStone: true,
     cloud: 0xf2f6ff,
-    arena: [0xd8d4e8, 0xc8d8e8, 0xe8e0c8, 0xd0e4d0, 0xe8d0d8],
+    // stone tones like the pedestal; the arena is bricked in this world
+    arena: [0xd2cdc0, 0xc4beb0, 0xdcd6c8, 0xbcb6a8, 0xcac6bc],
+    arenaMasonry: true,
     crowd: ['pig', 'goat', 'owl', 'hen'],
   },
   gulch: {

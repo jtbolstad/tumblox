@@ -245,6 +245,13 @@ function placeAll(
   }
 }
 
+/** One arena block as a solid box, for its collider: centre, size [w, h, d] and turn around y. */
+export interface Solid {
+  pos: THREE.Vector3;
+  size: [number, number, number];
+  face: number;
+}
+
 /** A place for a spectator to stand, facing the play area. */
 export interface Spot {
   pos: THREE.Vector3;
@@ -254,55 +261,192 @@ export interface Spot {
   ground: boolean;
 }
 
-/** The arena opens toward the default camera (+z) so it never blocks the view. */
-const ARENA_OPEN_HALF = THREE.MathUtils.degToRad(62);
+const darker = (color: number, k: number) => new THREE.Color(color).multiplyScalar(k).getHex();
+
+/**
+ * How each world dresses its arena blocks. `decor` builds extras in the block's own frame: origin at the
+ * middle of its base, +z facing the play area. `lift` raises the spectators' footing (a grass lid, say).
+ */
+const ARENA_STYLES: Record<
+  ThemeId,
+  {
+    bevel: number;
+    lift: number;
+    decor: (w: number, h: number, d: number, color: number, rand: () => number) => Part[];
+  }
+> = {
+  // soft toy blocks with a lid of grass dripping over the front edge
+  meadow: {
+    bevel: 0.35,
+    lift: 0.14,
+    decor: (w, h, d, _c, rand) => [
+      p(new RoundedBoxGeometry(w + 0.12, 0.2, d + 0.12, 2, 0.08), 0x7bc47f, [0, h + 0.03, 0]),
+      ...Array.from({ length: 3 }, (_, i) => {
+        const drip = 0.15 + rand() * 0.3;
+        return p(box(0.5 + rand() * 0.6, drip, 0.08), 0x6fb873, [
+          (i - 1) * w * 0.3,
+          h - drip / 2,
+          d / 2 + 0.03,
+        ]);
+      }),
+    ],
+  },
+  // bamboo-bound blocks: a woven band, corner poles and a rail along the front
+  tiki: {
+    bevel: 0.25,
+    lift: 0,
+    decor: (w, h, d) => [
+      p(box(w + 0.08, 0.3, d + 0.08), 0xc9a86a, [0, h * 0.55, 0]),
+      p(cyl(0.11, 0.11, h + 0.6), 0xb08850, [-w / 2, (h + 0.6) / 2, d / 2]),
+      p(cyl(0.11, 0.11, h + 0.6), 0xb08850, [w / 2, (h + 0.6) / 2, d / 2]),
+      p(cyl(0.07, 0.07, w), 0xb08850, [0, h + 0.35, d / 2], [0, 0, Math.PI / 2]),
+    ],
+  },
+  // crisp stone with battlements along the front and back edges
+  castle: {
+    bevel: 0.06,
+    lift: 0,
+    decor: (w, h, d, color) => {
+      const merlons: Part[] = [];
+      const n = Math.max(2, Math.round(w / 0.9));
+      for (let i = 0; i < n; i++) {
+        const x = -w / 2 + 0.25 + (i * (w - 0.5)) / (n - 1);
+        for (const z of [d / 2 - 0.2, -d / 2 + 0.2]) {
+          if (i % 2 === 0) merlons.push(p(box(0.5, 0.5, 0.4), darker(color, 0.92), [x, h + 0.25, z]));
+        }
+      }
+      return merlons;
+    },
+  },
+  // red-rock mesas with darker strata
+  gulch: {
+    bevel: 0.12,
+    lift: 0,
+    decor: (w, h, d, color, rand) =>
+      [0.3 + rand() * 0.1, 0.62 + rand() * 0.1].map((f) =>
+        p(box(w + 0.05, 0.22, d + 0.05), darker(color, 0.8), [0, h * f, 0]),
+      ),
+  },
+  // gloomy slabs with iron spikes along the front and a candle on a corner
+  manor: {
+    bevel: 0.12,
+    lift: 0,
+    decor: (w, h, d, _c, rand) => {
+      const n = Math.max(3, Math.round(w / 0.5));
+      const spikes = Array.from({ length: n }, (_, i) =>
+        p(cone(0.05, 0.35, 4), 0x2f2a36, [-w / 2 + 0.2 + (i * (w - 0.4)) / (n - 1), h + 0.17, d / 2 - 0.1]),
+      );
+      if (rand() < 0.5) {
+        const x = rand() < 0.5 ? -w / 2 + 0.3 : w / 2 - 0.3;
+        spikes.push(p(cyl(0.07, 0.07, 0.3), 0xf2ead8, [x, h + 0.15, -d / 2 + 0.3]));
+        spikes.push(p(cone(0.06, 0.16, 5), 0xffc46b, [x, h + 0.38, -d / 2 + 0.3], [0, 0, 0], true));
+      }
+      return spikes;
+    },
+  },
+};
+
+/** Tiers of giant blocks, inner to outer: ring radius and ranges for height, width and depth (m). */
 const TIERS = [
-  { r: 15.5, h: [2.2, 3.4], w: [3.4, 4.6], d: 3.2 },
-  { r: 19.6, h: [4.6, 7.4], w: [4, 5.6], d: 3.4 },
+  { r: 15.5, h: [1.8, 3.8], w: [2.6, 5.2], d: [2.6, 3.6] },
+  { r: 19.4, h: [3.8, 7.6], w: [3, 6], d: [2.8, 3.8] },
+  { r: 22, h: [6.5, 10], w: [3.5, 6.5], d: [2.2, 2.8] },
 ] as const;
 
 const lerp = (range: readonly [number, number], t: number) => range[0] + (range[1] - range[0]) * t;
 const faceCentre = (x: number, z: number) => Math.atan2(-x, -z);
 
 /** Darker at the foot, lighter at the top, so the giant blocks read as soft painted shapes. */
-function shadeByHeight(part: Part, height: number) {
+function shadeByHeight(part: Part, bottom: number, top: number) {
   const pos = part.geo.getAttribute('position');
   const col = part.geo.getAttribute('color') as THREE.BufferAttribute;
   for (let i = 0; i < pos.count; i++) {
-    const k = 0.78 + 0.3 * THREE.MathUtils.clamp(pos.getY(i) / height, 0, 1);
+    const k = 0.78 + 0.3 * THREE.MathUtils.clamp((pos.getY(i) - bottom) / (top - bottom), 0, 1);
     col.setXYZ(i, Math.min(col.getX(i) * k, 1), Math.min(col.getY(i) * k, 1), Math.min(col.getZ(i) * k, 1));
   }
 }
 
-/** Two tiers of giant pastel blocks ringing the play area like stadium seating; returns their tops. */
-function arena(theme: ThemeId, rand: () => number): { parts: Part[]; tops: (Spot & { tier: number })[] } {
+/**
+ * Giant pastel blocks ringing the play area like stadium seating, different on every level: two or three
+ * tiers, uneven sizes and spacing, a few gaps, some smaller blocks stacked on top. It always stays open
+ * toward the default camera (+z). Returns the tops where spectators can stand.
+ */
+function arena(
+  theme: ThemeId,
+  rand: () => number,
+): { parts: Part[]; tops: (Spot & { tier: number })[]; solids: Solid[] } {
   const palette = THEMES[theme].arena;
+  const colour = () => palette[Math.floor(rand() * palette.length)];
   const parts: Part[] = [];
   const tops: (Spot & { tier: number })[] = [];
-  TIERS.forEach((tier, t) => {
-    const end = Math.PI / 2 + 2 * Math.PI - ARENA_OPEN_HALF;
-    let a = Math.PI / 2 + ARENA_OPEN_HALF + (t === 1 ? 0.12 : 0);
+  const solids: Solid[] = [];
+  const open = THREE.MathUtils.degToRad(54 + rand() * 16);
+  const tiers = rand() < 0.5 ? TIERS.slice(0, 2) : TIERS;
+  const style = ARENA_STYLES[theme];
+  const block = (w: number, h: number, d: number, x: number, y: number, z: number, face: number) => {
+    const color = colour();
+    const part = p(
+      new RoundedBoxGeometry(w, h, d, 2, style.bevel),
+      color,
+      [x, y + h / 2 - 0.05, z],
+      [0, face, 0],
+    );
+    shadeByHeight(part, y, y + h);
+    parts.push(part);
+    solids.push({ pos: new THREE.Vector3(x, y + h / 2 - 0.05, z), size: [w, h, d], face });
+    placeAll(parts, style.decor(w, h, d, color, rand), x, y, z, face, 1);
+  };
+  tiers.forEach((tier, t) => {
+    const end = Math.PI / 2 + 2 * Math.PI - open;
+    let a = Math.PI / 2 + open + rand() * 0.25;
     for (;;) {
+      if (rand() < 0.18) {
+        a += (2 + rand() * 3) / tier.r; // a gap in the stands, so the world behind shows through
+        continue;
+      }
       const w = lerp(tier.w, rand());
       const h = lerp(tier.h, rand());
-      const mid = a + w / 2 / tier.r;
+      const d = lerp(tier.d, rand());
       if (a + w / tier.r > end) break;
-      const x = Math.cos(mid) * tier.r;
-      const z = Math.sin(mid) * tier.r;
-      const face = faceCentre(x, z);
-      const part = p(
-        new RoundedBoxGeometry(w, h, tier.d, 2, 0.35),
-        palette[Math.floor(rand() * palette.length)],
-        [x, h / 2 - 0.05, z],
-        [0, face, 0],
-      );
-      shadeByHeight(part, h);
-      parts.push(part);
-      tops.push({ pos: new THREE.Vector3(x, h - 0.05, z), face, ground: false, tier: t });
-      a += (w + 0.3) / tier.r;
+      const mid = a + w / 2 / tier.r;
+      const r = tier.r + (rand() - 0.5) * 1.6;
+      const x = Math.cos(mid) * r;
+      const z = Math.sin(mid) * r;
+      const face = faceCentre(x, z) + (rand() - 0.5) * 0.3;
+      // the block's own x axis, for placing things along its top
+      const ax = Math.cos(face);
+      const az = -Math.sin(face);
+      block(w, h, d, x, 0, z, face);
+      if (rand() < 0.3) {
+        // a smaller block stacked on top, off-centre
+        const w2 = w * (0.4 + rand() * 0.35);
+        const h2 = 1 + rand() * 2.2;
+        const off = (rand() - 0.5) * (w - w2);
+        const sx = x + ax * off;
+        const sz = z + az * off;
+        block(w2, h2, d * (0.5 + rand() * 0.3), sx, h, sz, face);
+        tops.push({
+          pos: new THREE.Vector3(sx, h + h2 - 0.05 + style.lift, sz),
+          face,
+          ground: false,
+          tier: t,
+        });
+      } else {
+        // wide blocks hold two spectators side by side
+        const offsets = w > 4.4 ? [-w / 4, w / 4] : [0];
+        for (const off of offsets) {
+          tops.push({
+            pos: new THREE.Vector3(x + ax * off, h - 0.05 + style.lift, z + az * off),
+            face,
+            ground: false,
+            tier: t,
+          });
+        }
+      }
+      a += (w + 0.15 + rand() * 0.5) / tier.r;
     }
   });
-  return { parts, tops };
+  return { parts, tops, solids };
 }
 
 function islandProps(
@@ -433,21 +577,87 @@ export function merge(parts: Part[]): THREE.BufferGeometry | null {
   return geo;
 }
 
+/** Metres covered by one repeat of the masonry texture (4 brick courses). */
+const BRICK_TILE = 2.4;
+
+/** Light stone bricks with mortar lines, a little variation per brick; tinted by the vertex colour. */
+function masonryTexture(): THREE.CanvasTexture | null {
+  if (typeof document === 'undefined') return null; // headless (tests): no canvas
+  const canvas = document.createElement('canvas');
+  canvas.width = canvas.height = 256;
+  const g = canvas.getContext('2d');
+  if (!g) return null;
+  const rand = seeded(97);
+  g.fillStyle = '#9a958c'; // mortar
+  g.fillRect(0, 0, 256, 256);
+  const rows = 4;
+  const rowH = 256 / rows;
+  for (let row = 0; row < rows; row++) {
+    const offset = row % 2 === 0 ? 0 : 64;
+    for (let col = -1; col < 2; col++) {
+      const x = col * 128 + offset;
+      const shade = 225 + Math.floor(rand() * 30);
+      g.fillStyle = `rgb(${shade}, ${shade - 3}, ${shade - 8})`;
+      g.fillRect(x + 3, row * rowH + 3, 122, rowH - 6);
+      g.fillStyle = 'rgba(255, 255, 255, 0.25)'; // lit top edge
+      g.fillRect(x + 3, row * rowH + 3, 122, 4);
+      g.fillStyle = 'rgba(0, 0, 0, 0.12)'; // shaded bottom edge
+      g.fillRect(x + 3, row * rowH + rowH - 9, 122, 6);
+    }
+  }
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.anisotropy = 8;
+  return tex;
+}
+
+/**
+ * Box-projected UVs from world position: each face takes the two axes it spans, so bricks stay the same
+ * size on every block and courses run level on every wall.
+ */
+function worldUVs(geo: THREE.BufferGeometry, tile: number) {
+  const pos = geo.getAttribute('position');
+  const nor = geo.getAttribute('normal');
+  const uv = new Float32Array(pos.count * 2);
+  for (let i = 0; i < pos.count; i++) {
+    const ax = Math.abs(nor.getX(i));
+    const ay = Math.abs(nor.getY(i));
+    const az = Math.abs(nor.getZ(i));
+    const [u, v] =
+      ay >= ax && ay >= az
+        ? [pos.getX(i), pos.getZ(i)]
+        : ax >= az
+          ? [pos.getZ(i), pos.getY(i)]
+          : [pos.getX(i), pos.getY(i)];
+    uv[i * 2] = u / tile;
+    uv[i * 2 + 1] = v / tile;
+  }
+  geo.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
+}
+
 /**
  * Everything decorative for a world, as one group to add to (and later remove from) the scene, plus the
  * free spots where spectators can stand.
  */
-export function buildProps(theme: ThemeId, pedestalHalf: number): { group: THREE.Group; spots: Spot[] } {
-  const rand = seeded(THEMES[theme].name.length * 131 + 7);
+export function buildProps(
+  theme: ThemeId,
+  pedestalHalf: number,
+  seed = 7,
+): { group: THREE.Group; spots: Spot[]; solids: Solid[] } {
+  const rand = seeded(THEMES[theme].name.length * 131 + seed);
   const stands = arena(theme, rand);
   const island = islandProps(theme, rand, stands.tops, pedestalHalf);
   const parts = [...island.parts, ...distantScenery(theme, rand)];
   const group = new THREE.Group();
-  const arenaGeo = merge(stands.parts);
+  const arenaGeo = merge(stands.parts.filter((part) => !part.glow));
+  parts.push(...stands.parts.filter((part) => part.glow)); // candles join the other glowing bits
   if (arenaGeo) {
+    const masonry = THEMES[theme].arenaMasonry ? masonryTexture() : null;
+    if (masonry) worldUVs(arenaGeo, BRICK_TILE);
     const mesh = new THREE.Mesh(
       arenaGeo,
-      new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.85 }),
+      new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.85, map: masonry }),
     );
     mesh.receiveShadow = true;
     group.add(mesh);
@@ -472,7 +682,7 @@ export function buildProps(theme: ThemeId, pedestalHalf: number): { group: THREE
     water.position.y = -0.7; // just under the island top, hiding the rocky underside
     group.add(water);
   }
-  return { group, spots: island.free };
+  return { group, spots: island.free, solids: stands.solids };
 }
 
 export function disposeGroup(group: THREE.Group) {

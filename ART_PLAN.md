@@ -162,6 +162,14 @@ Notes from an original gameplay frame (2026-10-24): the play area sits in an are
 - [x] Arms (wings for hen, parrot, owl and bat) on every character, with new moves: wave, dance, arm-pumping cheer, flailing panic
 - [x] Crowd reactions: cheers on chains, scores and knocked-off rivals; dances on a win, droops on a loss; watches the ball in flight; a crowd "yay" with claps or an "aww"
 - [x] Props and spectators keep clear of wide pedestals (the title scene)
+- [x] Arena varies per level (seeded by level id): two or three tiers, uneven sizes, jittered placement, stacked blocks, frequent gaps, a varying opening
+- [x] Arena themed per world: grass lids in Meadow, bamboo poles and rails in Tiki, battlements in Castle, rock strata in Gulch, iron spikes and candles in Manor
+- [x] Crowd wears the world's costume: straw hats (Meadow), flower leis (Tiki), crowns and tabards (Castle), cowboy hats and bandanas (Gulch), witch hats and capes (Manor); level characters too
+- [x] Castle arena is masonry: stone-toned blocks with a brick texture mapped by world position, so bricks keep one size on every block
+- [x] Touchpad: two-finger swipe orbits and tilts, pinch zooms; a mouse wheel still zooms
+- [x] Start-of-level banner (`src/brief.ts`): goal, how to play, budget and warnings (friends, rivals, tricky blocks); fades after 5 s or on the first action; not shown on retries
+- [x] Spectators are hittable: arena blocks are solid, spectators are light physics bodies; a ball or laser bonks one ("Bonk!" and an "ouch"), and it poofs back to its perch after it settles. They never hold up scoring
+- [x] Crowd: random species (about half natives, half anyone), bigger (2.3× on the stands), several dance styles (sway, arm pump, twirl) all locked to the music's beat (`musicBeat()` in `src/music.ts`; 120 bpm when the music is off)
 
 ## Performance budget
 

@@ -24,11 +24,20 @@ import {
   unlockAudio,
 } from './audio';
 import { BLOCKS, type BlockType } from './blocks';
-import { CHARACTERS, type CharacterKind, CharacterRig, type Mood, moodFor, type Role } from './characters';
+import { levelBrief } from './brief';
+import {
+  CHARACTER_IDS,
+  CHARACTERS,
+  type CharacterKind,
+  CharacterRig,
+  type Mood,
+  moodFor,
+  type Role,
+} from './characters';
 import { Debris, disposeMesh, makeZoneMesh, Particles, Puffs, Shake, Shockwaves } from './fx';
 import { type Level, loadBundledLevels } from './level';
 import { blockTexture } from './marks';
-import { exciteMusic, initMusic, setTrack } from './music';
+import { exciteMusic, initMusic, musicBeat, setTrack } from './music';
 import {
   createParty,
   endDuelTurn,
@@ -40,7 +49,7 @@ import {
   totalTurns,
 } from './party';
 import { loadProgress, recordResult } from './progress';
-import { buildProps, disposeGroup, type Spot } from './props';
+import { buildProps, disposeGroup, type Solid, type Spot } from './props';
 import {
   type BlockState,
   type BlockStatus,
@@ -66,6 +75,7 @@ import {
   makeEnvironment,
   makeIsland,
   makeSky,
+  seeded,
   setSkyColors,
 } from './scene';
 import { THEMES, type ThemeId } from './themes';
@@ -227,22 +237,51 @@ let island: THREE.Group | null = null;
 let props: THREE.Group | null = null;
 let crowdSpots: Spot[] = [];
 let propsKey = '';
+let crowdSeed = 0;
 
-/** Rebuild props and the crowd for a world and pedestal width (normal levels share one size bucket). */
-function applyProps(id: ThemeId, pedestalHalf: number) {
+/** A small stable number from a string, to seed per-level randomness. */
+function hashString(text: string) {
+  let h = 2166136261;
+  for (let i = 0; i < text.length; i++) h = Math.imul(h ^ text.charCodeAt(i), 16777619);
+  return h >>> 0;
+}
+
+/** Rebuild the arena, props and crowd: different for every level, the same each time a level is replayed. */
+function applyProps(id: ThemeId, pedestalHalf: number, levelId: string) {
   const half = Math.max(3, Math.ceil(pedestalHalf));
-  const key = `${id}:${half}`;
+  const key = `${id}:${half}:${levelId}`;
   if (key === propsKey) return;
   propsKey = key;
+  crowdSeed = hashString(levelId);
   if (props) {
     scene.remove(props);
     disposeGroup(props);
   }
-  const built = buildProps(id, half);
+  const built = buildProps(id, half, crowdSeed % 100000);
   props = built.group;
   crowdSpots = built.spots;
   scene.add(props);
+  buildArenaColliders(built.solids);
   buildCrowd();
+}
+
+const arenaColliders: RAPIER.Collider[] = [];
+
+/** The arena blocks are solid: stray balls bounce off the stands, knocked spectators land on them. */
+function buildArenaColliders(solids: Solid[]) {
+  for (const c of arenaColliders) world.removeCollider(c, false);
+  arenaColliders.length = 0;
+  for (const s of solids) {
+    arenaColliders.push(
+      world.createCollider(
+        RAPIER.ColliderDesc.cuboid(s.size[0] / 2, s.size[1] / 2, s.size[2] / 2)
+          .setTranslation(s.pos.x, s.pos.y, s.pos.z)
+          .setRotation({ x: 0, y: Math.sin(s.face / 2), z: 0, w: Math.cos(s.face / 2) })
+          .setFriction(0.8)
+          .setRestitution(0.3),
+      ),
+    );
+  }
 }
 
 /** Switch sky, island, props, light and pedestal to a world. Cheap to call: does nothing if it is current. */
@@ -608,7 +647,8 @@ function loadLevel(index: number) {
   levelIndex = index;
   level = index === TITLE_INDEX ? titleScene : levels[index];
   applyTheme(level.theme);
-  applyProps(level.theme, Math.max(...level.platform.size) / 2);
+  applyProps(level.theme, Math.max(...level.platform.size) / 2, level.id);
+  resetCrowd(); // back on their perches, and known to the collision lookup again (clearLevel emptied it)
   throwsUsed = 0;
   simTime = 0;
   lastMotion = 0;
@@ -754,7 +794,7 @@ function spawnCharacter(spec: Level['characters'][number], top: number) {
     body,
   );
   body.sleep(); // like blocks, characters wait asleep until something hits them
-  const rig = new CharacterRig(spec.kind);
+  const rig = new CharacterRig(spec.kind, true, level.theme);
   scene.add(rig.root);
   const entity: CharacterEntity = {
     ...makeEntityBase(body, collider),
@@ -798,18 +838,61 @@ let push = 0;
 const pushOffset = new THREE.Vector3();
 
 /** Turn the camera around the orbit target by `angle` rad and scale its distance by `zoom`. */
-function orbitCamera(angle: number, zoom = 1) {
+function orbitCamera(angle: number, zoom = 1, tilt = 0) {
   orbitOffset.copy(camera.position).sub(controls.target);
-  orbitOffset.applyAxisAngle(THREE.Object3D.DEFAULT_UP, angle);
-  const len = Math.min(Math.max(orbitOffset.length() * zoom, controls.minDistance), controls.maxDistance);
-  camera.position.copy(controls.target).add(orbitOffset.setLength(len));
+  orbitSpherical.setFromVector3(orbitOffset);
+  orbitSpherical.theta += angle;
+  orbitSpherical.phi = THREE.MathUtils.clamp(orbitSpherical.phi + tilt, 0.15, controls.maxPolarAngle);
+  orbitSpherical.radius = THREE.MathUtils.clamp(
+    orbitSpherical.radius * zoom,
+    controls.minDistance,
+    controls.maxDistance,
+  );
+  camera.position.copy(controls.target).add(orbitOffset.setFromSpherical(orbitSpherical));
 }
+
+// ---------- touchpad: two-finger swipe orbits, pinch zooms; a mouse wheel still zooms ----------
+const orbitSpherical = new THREE.Spherical();
+const TOUCHPAD_ORBIT = 0.005; // rad per pixel of swipe
+const PINCH_ZOOM = 0.01; // per unit of pinch delta
+
+/**
+ * Touchpads send swipes as smooth pixel deltas, often sideways or fractional; mouse wheels send big even
+ * notches straight up or down (or count lines).
+ */
+function isTouchpadSwipe(ev: WheelEvent) {
+  return (
+    ev.deltaMode === WheelEvent.DOM_DELTA_PIXEL &&
+    (ev.deltaX !== 0 || !Number.isInteger(ev.deltaY) || Math.abs(ev.deltaY) < 40)
+  );
+}
+
+// listen on window in the capture phase, so OrbitControls' own wheel zoom never sees these events
+addEventListener(
+  'wheel',
+  (ev) => {
+    if (ev.target !== canvas || introT < 1) return;
+    ev.preventDefault();
+    ev.stopPropagation();
+    if (ev.ctrlKey) {
+      orbitCamera(0, Math.exp(ev.deltaY * PINCH_ZOOM)); // a touchpad pinch arrives as ctrl + wheel
+    } else if (isTouchpadSwipe(ev)) {
+      orbitCamera(ev.deltaX * TOUCHPAD_ORBIT, 1, -ev.deltaY * TOUCHPAD_ORBIT);
+    } else {
+      orbitCamera(0, Math.exp(Math.sign(ev.deltaY) * 0.1)); // mouse wheel notch
+    }
+    controls.update();
+  },
+  { capture: true, passive: false },
+);
 
 const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
 
 function startIntro() {
   if (levelIndex === introLevel) return;
   introLevel = levelIndex;
+  // a new level (not a retry): say what to do here
+  if (levelIndex !== TITLE_INDEX) ui.showBanner(levelBrief(level, levelIndex + 1));
   if (reducedMotion) return;
   introTo.copy(camera.position);
   introT = 0;
@@ -1092,7 +1175,14 @@ function handleImpacts() {
     const speed = Math.max(bodySpeed(h1), bodySpeed(h2));
     if (speed >= 1.5) playImpact(impactKind(a, b), speed);
     if (speed >= DUST_SPEED) impactEffects(a, b, speed);
-    for (const e of [a, b]) if (e && 'rig' in e && speed >= 3) say(e, 'ouch');
+    for (const e of [a, b]) {
+      if (!e || !('rig' in e) || speed < 3) continue;
+      if (isSpectator(e)) {
+        if ([a, b].some((o) => o && 'tool' in o)) bonk(e); // only a ball hit counts as a bonk
+      } else {
+        say(e, 'ouch');
+      }
+    }
     const blocksHit = [a, b].filter(
       (e): e is BlockEntity => !!e && 'type' in e && !!BLOCKS[e.type].behaviour,
     );
@@ -1160,6 +1250,11 @@ function fireLaser(px: number, py: number) {
   if (!hit) return;
   particles.burst(beamEnd, TOOLS.laser.color, 8, 3);
   const owner = colliderOwner.get(hit.collider.handle);
+  if (owner && 'rig' in owner && isSpectator(owner)) {
+    owner.body.applyImpulseAtPoint(beamDir.clone().multiplyScalar(LASER_IMPULSE * 2), beamEnd, true);
+    bonk(owner);
+    return;
+  }
   if (!owner || !('type' in owner) || !BLOCKS[owner.type].mobile) return;
   owner.body.applyImpulseAtPoint(beamDir.clone().multiplyScalar(LASER_IMPULSE), beamEnd, true);
   const toVanish = new Set<BlockEntity>();
@@ -1200,6 +1295,7 @@ function worldAsleep() {
   if (pendingBlasts.length > 0 || pendingLaunches.length > 0 || grab.entity || spraying) return false;
   for (const b of balls) if (!b.body.isSleeping()) return false;
   for (const c of chars) if (!c.body.isSleeping()) return false;
+  for (const s of crowd) if (!s.entity.body.isSleeping()) return false;
   for (const e of blocks) {
     if (e.status !== 'removed' && BLOCKS[e.type].mobile && !e.body.isSleeping()) return false;
   }
@@ -1236,6 +1332,7 @@ function syncRender(alpha: number) {
     e.mesh.setMatrixAt(e.instance, tmpMat);
   }
   for (const m of blockMeshes) m.instanceMatrix.needsUpdate = true;
+  syncCrowd(alpha);
   for (const c of chars) {
     c.rig.root.position.lerpVectors(c.prevPos, c.currPos, alpha);
     c.rig.root.quaternion.slerpQuaternions(c.prevRot, c.currRot, alpha);
@@ -1370,6 +1467,7 @@ function stepPhysics() {
       if (speedOf(c.body) > 0.1) moving = true;
     }
   }
+  stepCrowd(); // the crowd never holds up settling or scoring
   if (moving) lastMotion = simTime;
 
   refreshStats();
@@ -1471,6 +1569,7 @@ function pickBlock(px: number, py: number): { entity: BlockEntity; point: THREE.
 function beginGrab(px: number, py: number): boolean {
   const pick = pickBlock(px, py);
   if (!pick) return false;
+  ui.hideBanner();
   grab.planeY = pick.point.y;
   grabTarget.copy(pick.point);
   grab.local
@@ -1590,7 +1689,10 @@ canvas.addEventListener('pointerdown', (ev) => {
   aim.x = ev.clientX;
   aim.y = ev.clientY;
   if (isGrabTool() && !beginGrab(ev.clientX, ev.clientY)) return;
-  if (isHoseTool()) spraying = true;
+  if (isHoseTool()) {
+    spraying = true;
+    ui.hideBanner();
+  }
   throwPointer = ev.pointerId;
   aim.visible = true;
   samples = [{ t: ev.timeStamp, x: ev.clientX, y: ev.clientY }];
@@ -1649,7 +1751,10 @@ function spaceDown() {
     if (grab.entity) grab.entity = null;
     else if (canThrow()) beginGrab(aim.x, aim.y);
   } else if (isHoseTool()) {
-    if (canThrow()) spraying = true;
+    if (canThrow()) {
+      spraying = true;
+      ui.hideBanner();
+    }
   } else if (isLaserTool()) {
     launch(aim.x, aim.y, 0);
   } else if (canThrow()) {
@@ -1757,6 +1862,7 @@ function computeShot(px: number, py: number, flickSpeed: number) {
 
 function launch(px: number, py: number, flickSpeed: number) {
   if (!canThrow() || isGrabTool() || isHoseTool()) return;
+  ui.hideBanner(); // the player has got going
   if (isLaserTool()) {
     fireLaser(px, py);
   } else {
@@ -1931,42 +2037,168 @@ function updateCharacters(dt: number) {
   }
 }
 
-// ---------- the crowd: spectators around the arena, visual only ----------
+// ---------- the crowd: spectators around the arena; a ball can knock them flying ----------
 interface Spectator {
-  rig: CharacterRig;
+  entity: CharacterEntity;
   /** its own idle routine: stand, wave or dance, changing every few seconds */
   idleMood: Mood;
   nextChange: number;
+  home: THREE.Vector3;
+  homeRot: THREE.Quaternion;
+  /** sim seconds spent off its perch and at rest; after a moment it poofs back */
+  awayFor: number;
+  lastBonk: number; // performance.now()
 }
 const crowd: Spectator[] = [];
-const CROWD_SCALE = { arena: 1.5, ground: 1.15 };
+const CROWD_SCALE = { arena: 2.3, ground: 1.4 }; // ground spectators stand close to the camera, so a bit smaller
+const CROWD_DENSITY = 0.25; // light, so a ball sends them flying
+const CROWD_HOME_DELAY = 1.5; // s at rest away from home before poofing back
 let crowdCheerUntil = 0; // performance.now() until which the whole crowd cheers
 
-/** Fill the free spots with the world's species: a few on the grass, the rest up on the arena. */
-function buildCrowd() {
-  for (const s of crowd) scene.remove(s.rig.root);
+function removeCrowd() {
+  for (const s of crowd) {
+    scene.remove(s.entity.rig.root);
+    colliderOwner.delete(s.entity.collider.handle);
+    world.removeRigidBody(s.entity.body);
+  }
   crowd.length = 0;
+}
+
+/**
+ * Fill the free spots: about half the world's own species, half anyone at all, scattered at random
+ * (seeded per level). A few stand on the grass, the rest up on the arena.
+ */
+function buildCrowd() {
+  removeCrowd();
   if (!themeId) return;
-  const species = THEMES[themeId].crowd;
+  const rand = seeded(crowdSeed);
+  const natives = THEMES[themeId].crowd;
   const count = QUALITY_SETTINGS[quality].crowd;
-  const ground = crowdSpots.filter((s) => s.ground);
-  const stands = crowdSpots.filter((s) => !s.ground);
-  // spread picks evenly around the arena rather than bunching them at one end
-  const picks = [
-    ...ground.slice(0, Math.min(ground.length, Math.ceil(count / 4))),
-    ...stands.filter((_, i) => i % Math.max(1, Math.floor(stands.length / count)) === 0),
-  ].slice(0, count);
-  picks.forEach((spot, i) => {
-    const kind = species[i % species.length];
-    const rig = new CharacterRig(kind, false); // no shadows: a crowd of shadow casters costs too much
-    const scale = spot.ground ? CROWD_SCALE.ground : CROWD_SCALE.arena;
+  const shuffle = <T>(list: T[]) =>
+    list
+      .map((item) => ({ item, k: rand() }))
+      .sort((x, y) => x.k - y.k)
+      .map((e) => e.item);
+  const ground = shuffle(crowdSpots.filter((s) => s.ground));
+  const stands = shuffle(crowdSpots.filter((s) => !s.ground));
+  const picks = [...ground.slice(0, Math.ceil(count / 4)), ...stands].slice(0, count);
+  for (const spot of picks) {
+    const pool = rand() < 0.5 ? natives : CHARACTER_IDS;
+    const kind: CharacterKind = pool[Math.floor(rand() * pool.length)];
+    const def = CHARACTERS[kind];
+    const rig = new CharacterRig(kind, false, themeId); // no shadows: a crowd of shadow casters costs too much
+    rig.danceStyle = Math.floor(rand() * 3);
+    const scale = (spot.ground ? CROWD_SCALE.ground : CROWD_SCALE.arena) * (0.9 + rand() * 0.2);
     rig.root.scale.setScalar(scale);
-    rig.root.position.copy(spot.pos);
-    rig.root.position.y += (CHARACTERS[kind].size[1] / 2) * scale;
-    rig.root.rotation.y = spot.face;
+    const home = spot.pos.clone();
+    home.y += (def.size[1] / 2) * scale;
+    const homeRot = new THREE.Quaternion().setFromAxisAngle(THREE.Object3D.DEFAULT_UP, spot.face);
+    const body = world.createRigidBody(
+      RAPIER.RigidBodyDesc.dynamic()
+        .setTranslation(home.x, home.y, home.z)
+        .setRotation(homeRot)
+        .setAngularDamping(0.3),
+    );
+    const [w, h, d] = def.size;
+    const collider = world.createCollider(
+      RAPIER.ColliderDesc.cuboid((w / 2) * scale, (h / 2) * scale, (d / 2) * scale)
+        .setDensity(def.density * CROWD_DENSITY)
+        .setFriction(0.8)
+        .setActiveEvents(RAPIER.ActiveEvents.COLLISION_EVENTS),
+      body,
+    );
+    body.sleep();
     scene.add(rig.root);
-    crowd.push({ rig, idleMood: 'idle', nextChange: 0 });
-  });
+    const entity: CharacterEntity = {
+      ...makeEntityBase(body, collider),
+      kind,
+      role: 'decor',
+      status: 'alive',
+      rig,
+      mood: 'idle',
+      lastVoice: -1e9,
+      tiltedFor: 0,
+    };
+    colliderOwner.set(collider.handle, entity);
+    crowd.push({ entity, idleMood: 'idle', nextChange: 0, home, homeRot, awayFor: 0, lastBonk: -1e9 });
+  }
+  syncCrowd(1);
+}
+
+/** Put one spectator back on its perch, asleep. */
+function sendHome(s: Spectator) {
+  const b = s.entity.body;
+  b.setTranslation(s.home, false);
+  b.setRotation(s.homeRot, false);
+  b.setLinvel({ x: 0, y: 0, z: 0 }, false);
+  b.setAngvel({ x: 0, y: 0, z: 0 }, false);
+  b.sleep();
+  s.entity.prevPos.copy(s.home);
+  s.entity.currPos.copy(s.home);
+  s.entity.prevRot.copy(s.homeRot);
+  s.entity.currRot.copy(s.homeRot);
+  s.awayFor = 0;
+}
+
+/** On every level load or retry: everyone back home and registered for collisions again. */
+function resetCrowd() {
+  for (const s of crowd) {
+    sendHome(s);
+    colliderOwner.set(s.entity.collider.handle, s.entity);
+  }
+  syncCrowd(1);
+}
+
+/** Physics step for the crowd; a spectator knocked off its perch poofs back once it comes to rest. */
+function stepCrowd() {
+  for (const s of crowd) {
+    const e = s.entity;
+    const asleep = e.body.isSleeping();
+    if (asleep && s.awayFor === 0 && e.currPos.distanceTo(s.home) < 0.5) continue; // at home, nothing to do
+    if (!asleep) capture(e);
+    const resting = asleep || speedOf(e.body) < 0.4;
+    const away = e.currPos.distanceTo(s.home) > 0.5 || e.currPos.y < -5;
+    s.awayFor = away && resting ? s.awayFor + STEP : 0;
+    if (s.awayFor > CROWD_HOME_DELAY || e.currPos.y < CATCH_FLOOR_Y + 2) {
+      poof(e.currPos, e.rig.root.scale.x);
+      sendHome(s);
+      poof(s.home, e.rig.root.scale.x);
+    } else if (!away && resting && e.currPos.distanceTo(s.home) > 0.05) {
+      getUpIfFallenOver(e); // nudged but still on its perch: stand back up
+    }
+  }
+}
+
+function syncCrowd(alpha: number) {
+  for (const s of crowd) {
+    const e = s.entity;
+    e.rig.root.position.lerpVectors(e.prevPos, e.currPos, alpha);
+    e.rig.root.quaternion.slerpQuaternions(e.prevRot, e.currRot, alpha);
+  }
+}
+
+/** A puff of smoke and sparkles where a spectator vanishes or reappears. */
+function poof(at: THREE.Vector3, size: number) {
+  for (let i = 0; i < 4; i++) {
+    puffPos.copy(at).addScaledVector(randomDir(puffVel), 0.4 * size);
+    smoke.emit(puffPos, { color: 0xffffff, size: [0.6 * size, 1.6 * size], life: 0.5, alpha: 0.8 });
+  }
+  particles.burst(at, 0xffe066, 8, 3);
+}
+
+function isSpectator(e: CharacterEntity) {
+  return crowd.some((s) => s.entity === e);
+}
+
+/** A ball (or the laser) bonked a spectator; one bonk per hit, not one per contact. */
+function bonk(e: CharacterEntity) {
+  const s = crowd.find((c) => c.entity === e);
+  const now = performance.now();
+  if (!s || now - s.lastBonk < 1000) return;
+  s.lastBonk = now;
+  say(e, 'ouch');
+  popupAt(e.currPos, 'Bonk!', false, '#ff8c42');
+  playCrowd('cheer');
 }
 
 function crowdCheer(seconds: number) {
@@ -1975,14 +2207,19 @@ function crowdCheer(seconds: number) {
 }
 
 const crowdLook = new THREE.Vector3();
-const IDLE_ROUTINE: Mood[] = ['idle', 'idle', 'idle', 'wave', 'wave', 'dance'];
+// mostly dancing to the music, with some standing and waving in between
+const IDLE_ROUTINE: Mood[] = ['idle', 'idle', 'wave', 'dance', 'dance', 'dance'];
 
 function updateCrowd(dt: number) {
   const now = performance.now();
+  // everyone dances on the music's beat; without music they keep a steady 120 bpm together
+  const beat = musicBeat() ?? (now / 1000) * 2;
   const flying = balls.find((b) => speedOf(b.body) > 3);
   crowd.forEach((s, i) => {
+    const rig = s.entity.rig;
     let mood: Mood;
-    if (phase === 'won') mood = i % 3 === 0 ? 'cheer' : 'dance';
+    if (!s.entity.body.isSleeping() && speedOf(s.entity.body) > 1.5) mood = 'tumble';
+    else if (phase === 'won') mood = i % 3 === 0 ? 'cheer' : 'dance';
     else if (phase === 'lost') mood = 'sad';
     else if (now < crowdCheerUntil) mood = i % 4 === 0 ? 'wave' : 'cheer';
     else {
@@ -1992,11 +2229,11 @@ function updateCrowd(dt: number) {
       }
       mood = s.idleMood;
     }
-    s.rig.mood = mood;
+    rig.mood = mood;
     // everyone watches the ball in flight, otherwise the action on the pedestal
     crowdLook.copy(flying ? flying.mesh.position : controls.target);
-    s.rig.root.updateMatrixWorld();
-    s.rig.update(dt, s.rig.root.worldToLocal(crowdLook));
+    rig.root.updateMatrixWorld();
+    rig.update(dt, rig.root.worldToLocal(crowdLook), beat);
   });
 }
 
@@ -2171,4 +2408,28 @@ requestAnimationFrame(frame);
     document.body.classList.toggle('capture', on);
   },
   frameStep: (ms: number) => tick(lastFrameAt + ms),
+  crowdScreen: () =>
+    crowd.map((c) => {
+      const v = c.entity.currPos.clone().project(camera);
+      return {
+        x: ((v.x + 1) / 2) * innerWidth,
+        y: ((1 - v.y) / 2) * innerHeight,
+        onScreen: Math.abs(v.x) < 0.9 && Math.abs(v.y) < 0.9 && v.z < 1,
+      };
+    }),
+  crowdDebug: () =>
+    crowd
+      .filter((c) => c.entity.currPos.distanceTo(c.home) > 0.05)
+      .map((c) => ({
+        at: c.entity.currPos.toArray().map((n) => Math.round(n * 10) / 10),
+        asleep: c.entity.body.isSleeping(),
+        speed: Math.round(speedOf(c.entity.body) * 100) / 100,
+        awayFor: Math.round(c.awayFor * 100) / 100,
+      })),
+  crowdState: () => crowd.map((c) => Math.round(c.entity.currPos.distanceTo(c.home) * 100) / 100),
+  cameraInfo: () => {
+    orbitSpherical.setFromVector3(camera.position.clone().sub(controls.target));
+    const r = (n: number) => Math.round(n * 100) / 100;
+    return { theta: r(orbitSpherical.theta), phi: r(orbitSpherical.phi), dist: r(orbitSpherical.radius) };
+  },
 };

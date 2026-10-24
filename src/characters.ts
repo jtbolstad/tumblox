@@ -1,5 +1,6 @@
 import * as THREE from 'three';
-import { box, cone, merge, type Part, p } from './props';
+import { box, cone, cyl, merge, type Part, p } from './props';
+import type { ThemeId } from './themes';
 
 /**
  * Cube animals that live on the levels. Each is one physics box; its look is built from boxes and
@@ -35,6 +36,8 @@ export interface CharacterDef {
   /** voice pitch multiplier */
   voice: number;
   translucent?: boolean;
+  /** already wears headwear (helmet, hat), so costumes skip the hat */
+  hatted?: boolean;
 }
 
 export const CHARACTERS: Record<CharacterKind, CharacterDef> = {
@@ -42,8 +45,8 @@ export const CHARACTERS: Record<CharacterKind, CharacterDef> = {
   hen: { name: 'Hen', size: [0.6, 0.8, 0.55], density: 0.5, voice: 1.4 },
   frog: { name: 'Frog', size: [0.8, 0.6, 0.65], density: 0.6, voice: 0.8 },
   parrot: { name: 'Parrot', size: [0.55, 0.85, 0.55], density: 0.4, voice: 1.6 },
-  pig: { name: 'Pig squire', size: [0.75, 0.85, 0.65], density: 0.8, voice: 0.9 },
-  armadillo: { name: 'Armadillo', size: [0.75, 0.75, 0.7], density: 0.9, voice: 0.85 },
+  pig: { name: 'Pig squire', size: [0.75, 0.85, 0.65], density: 0.8, voice: 0.9, hatted: true },
+  armadillo: { name: 'Armadillo', size: [0.75, 0.75, 0.7], density: 0.9, voice: 0.85, hatted: true },
   bat: { name: 'Bat', size: [0.6, 0.65, 0.5], density: 0.3, voice: 1.8 },
   ghost: { name: 'Ghost', size: [0.7, 0.95, 0.6], density: 0.3, voice: 0.7, translucent: true },
   fox: { name: 'Fox', size: [0.6, 0.85, 0.6], density: 0.6, voice: 1.2 },
@@ -318,20 +321,117 @@ interface Geometries {
   look: Look;
 }
 
-const geoCache = new Map<CharacterKind, Geometries>();
+/** Bounding box of loose parts, before they are merged. */
+function bounds(parts: Part[]): THREE.Box3 {
+  const box3 = new THREE.Box3();
+  for (const part of parts) {
+    part.geo.computeBoundingBox();
+    box3.union(part.geo.boundingBox as THREE.Box3);
+  }
+  return box3;
+}
 
-function geometries(kind: CharacterKind): Geometries {
-  const hit = geoCache.get(kind);
+/**
+ * The world's outfit, fitted to a character's head and body: `head` parts in head space (around the
+ * neck pivot), `body` parts in rig space.
+ */
+function costume(theme: ThemeId, kind: CharacterKind, look: Look): { head: Part[]; body: Part[] } {
+  const hb = bounds(look.head);
+  const bb = bounds(look.body);
+  const top = hb.max.y;
+  const cx = (hb.min.x + hb.max.x) / 2;
+  const cz = (hb.min.z + hb.max.z) / 2;
+  const hw = hb.max.x - hb.min.x;
+  const [, ny, nz] = look.neck;
+  const front = bb.max.z;
+  const back = bb.min.z;
+  const bw = bb.max.x - bb.min.x;
+  const hat = !CHARACTERS[kind].hatted;
+  const head: Part[] = [];
+  const body: Part[] = [];
+  switch (theme) {
+    case 'meadow':
+      if (hat) {
+        head.push(p(cyl(hw * 0.75, hw * 0.75, 0.04, 10), 0xe8c66a, [cx, top + 0.02, cz]));
+        head.push(p(cyl(hw * 0.32, hw * 0.38, 0.14, 10), 0xe8c66a, [cx, top + 0.1, cz]));
+        head.push(p(cyl(hw * 0.385, hw * 0.385, 0.04, 10), 0xe63946, [cx, top + 0.06, cz]));
+      }
+      break;
+    case 'tiki': {
+      // flower lei around the neck, a hibiscus behind one ear
+      const colours = [0xff5d8f, 0xffd23f, 0xff8c42, 0xffffff];
+      const r = Math.min(bw, 0.6) * 0.5;
+      for (let i = 0; i < 10; i++) {
+        const a = (i / 10) * Math.PI * 2;
+        body.push(
+          p(box(0.12, 0.12, 0.12), colours[i % 4], [
+            Math.cos(a) * r,
+            ny - 0.02,
+            nz * 0.5 + Math.sin(a) * r * 0.8,
+          ]),
+        );
+      }
+      head.push(p(box(0.12, 0.12, 0.04), 0xff5d8f, [hb.max.x - 0.02, top - 0.08, cz]));
+      head.push(p(box(0.05, 0.05, 0.05), 0xffd23f, [hb.max.x - 0.02, top - 0.08, cz + 0.03]));
+      break;
+    }
+    case 'castle':
+      if (hat) {
+        head.push(p(cyl(hw * 0.3, hw * 0.3, 0.08, 8), 0xf2c230, [cx, top + 0.04, cz]));
+        for (let i = 0; i < 5; i++) {
+          const a = (i / 5) * Math.PI * 2;
+          head.push(
+            p(cone(0.035, 0.1, 4), 0xf2c230, [
+              cx + Math.cos(a) * hw * 0.27,
+              top + 0.13,
+              cz + Math.sin(a) * hw * 0.27,
+            ]),
+          );
+        }
+      }
+      // tabard: a coloured panel down the front with a gold stripe
+      body.push(p(box(bw * 0.55, 0.3, 0.03), 0x4f6db0, [0, ny - 0.22, front + 0.015]));
+      body.push(p(box(0.05, 0.3, 0.035), 0xf2c230, [0, ny - 0.22, front + 0.02]));
+      break;
+    case 'gulch':
+      if (hat) {
+        head.push(p(box(hw * 1.25, 0.03, hw * 1.15), 0x7a5230, [cx, top + 0.015, cz]));
+        head.push(p(box(hw * 0.6, 0.14, hw * 0.55), 0x7a5230, [cx, top + 0.1, cz]));
+        head.push(p(box(hw * 0.61, 0.03, hw * 0.56), 0x3a2a24, [cx, top + 0.05, cz]));
+      }
+      body.push(p(box(bw * 0.5, 0.1, 0.03), 0xc0504d, [0, ny - 0.04, front + 0.015]));
+      body.push(
+        p(cone(bw * 0.18, 0.14, 4), 0xc0504d, [0, ny - 0.14, front + 0.02], [Math.PI, Math.PI / 4, 0]),
+      );
+      break;
+    case 'manor':
+      if (hat) {
+        head.push(p(cyl(hw * 0.75, hw * 0.75, 0.03, 10), 0x2f2540, [cx, top + 0.015, cz]));
+        head.push(p(cone(hw * 0.36, 0.42, 8), 0x2f2540, [cx, top + 0.22, cz], [0.2, 0, 0]));
+        head.push(p(cyl(hw * 0.37, hw * 0.37, 0.05, 8), 0x8a5ac8, [cx, top + 0.06, cz]));
+      }
+      body.push(p(box(bw * 0.9, 0.45, 0.04), 0x3a2a5a, [0, ny - 0.25, back - 0.02], [-0.12, 0, 0]));
+      break;
+  }
+  return { head, body };
+}
+
+const geoCache = new Map<string, Geometries>();
+
+function geometries(kind: CharacterKind, theme?: ThemeId): Geometries {
+  const key = `${kind}:${theme ?? ''}`;
+  const hit = geoCache.get(key);
   if (hit) return hit;
   const look = LOOKS[kind]();
+  const outfit = theme ? costume(theme, kind, look) : { head: [], body: [] };
   const built = {
-    body: merge(look.body) as THREE.BufferGeometry,
-    head: merge(look.head) as THREE.BufferGeometry,
+    body: merge([...look.body, ...outfit.body]) as THREE.BufferGeometry,
+    head: merge([...look.head, ...outfit.head]) as THREE.BufferGeometry,
     eyes: merge(look.eyes) as THREE.BufferGeometry,
     arm: merge(look.arm) as THREE.BufferGeometry,
     look,
   };
-  geoCache.set(kind, built);
+  geoCache.set(key, built);
   return built;
 }
 
@@ -355,6 +455,8 @@ export class CharacterRig {
   readonly root = new THREE.Group();
   readonly headHeight: number;
   mood: Mood = 'idle';
+  /** 0 sway, 1 arm pump, 2 twirl: crowds mix styles but keep one beat */
+  danceStyle = 0;
   private readonly rig = new THREE.Group();
   private readonly head: THREE.Mesh;
   private readonly eyes: THREE.Mesh;
@@ -365,8 +467,9 @@ export class CharacterRig {
   private blinkIn = 1 + Math.random() * 3;
   private blinkLeft = 0;
 
-  constructor(kind: CharacterKind, castShadow = true) {
-    const g = geometries(kind);
+  /** `theme` dresses the character in that world's costume. */
+  constructor(kind: CharacterKind, castShadow = true, theme?: ThemeId) {
+    const g = geometries(kind, theme);
     const mat = CHARACTERS[kind].translucent ? ghostMat : solidMat;
     const body = new THREE.Mesh(g.body, mat);
     this.head = new THREE.Mesh(g.head, mat);
@@ -388,10 +491,16 @@ export class CharacterRig {
     this.headHeight = g.look.neck[1] + g.look.eyeAt[1];
   }
 
-  /** `look`: where to look, in the root's local space (null = straight ahead). */
-  update(dt: number, look: THREE.Vector3 | null) {
+  /**
+   * `look`: where to look, in the root's local space (null = straight ahead).
+   * `beat`: the shared music position in beats; dancing and cheering lock to it, so a crowd moves together.
+   */
+  update(dt: number, look: THREE.Vector3 | null, beat?: number) {
     this.time += dt;
     const t = this.time;
+    // b runs half a turn per beat, so sin(b) is 0 (feet down) exactly on each beat
+    const b = (beat ?? t * 2) * Math.PI;
+    let spin: number | null = null;
     let yaw = 0;
     let pitch = 0;
     let roll = 0;
@@ -440,9 +549,9 @@ export class CharacterRig {
         raiseL = 1.5 - Math.sin(t * 16) * 0.6;
         break;
       case 'cheer':
-        hop = Math.abs(Math.sin(t * 7)) * 0.25;
+        hop = Math.abs(Math.sin(b)) * 0.25;
         pitch = -0.3;
-        raiseR = raiseL = 2.6 + Math.sin(t * 14) * 0.25;
+        raiseR = raiseL = 2.6 + Math.sin(b * 2) * 0.25;
         break;
       case 'sad':
         pitch = 0.45;
@@ -457,11 +566,24 @@ export class CharacterRig {
         hop = Math.max(0, Math.sin(t * 4.5)) * 0.02;
         break;
       case 'dance':
-        twist = Math.sin(t * 4) * 0.45;
-        hop = Math.abs(Math.sin(t * 8)) * 0.12;
-        roll = Math.sin(t * 4) * 0.25;
-        raiseR = 1.3 + Math.sin(t * 8) * 1.0;
-        raiseL = 1.3 - Math.sin(t * 8) * 1.0;
+        if (this.danceStyle === 1) {
+          // arm pump: hop on every beat, fists up, head nodding
+          hop = Math.abs(Math.sin(b)) * 0.18;
+          raiseR = raiseL = 2.4 + Math.sin(b * 2) * 0.3;
+          pitch = Math.sin(b * 2) * 0.2;
+        } else if (this.danceStyle === 2) {
+          // twirl: one full turn every four beats, arms out
+          spin = (((beat ?? t * 2) % 4) / 4) * Math.PI * 2;
+          hop = Math.abs(Math.sin(b)) * 0.1;
+          raiseR = raiseL = 1.4;
+        } else {
+          // sway: side to side over two beats, arms swapping on each beat
+          twist = Math.sin(b) * 0.45;
+          hop = Math.abs(Math.sin(b)) * 0.12;
+          roll = Math.sin(b) * 0.25;
+          raiseR = 1.3 + Math.cos(b) * 1.0;
+          raiseL = 1.3 - Math.cos(b) * 1.0;
+        }
         break;
     }
     // blink every few seconds
@@ -484,7 +606,9 @@ export class CharacterRig {
     l.z = damp(l.z, -raiseL, 16, dt);
     r.x = damp(r.x, swingR, 12, dt);
     l.x = damp(l.x, swingL, 12, dt);
-    this.rig.rotation.y = damp(this.rig.rotation.y, twist, 10, dt);
+    // a twirl follows the beat exactly; everything else eases toward its pose
+    const ry = this.rig.rotation.y;
+    this.rig.rotation.y = spin ?? damp(Math.atan2(Math.sin(ry), Math.cos(ry)), twist, 10, dt);
     this.rig.position.y = damp(this.rig.position.y, hop, 20, dt);
     this.rig.scale.y = damp(this.rig.scale.y, squash, 12, dt);
     this.eyes.scale.set(damp(this.eyes.scale.x, eyeX, 20, dt), damp(this.eyes.scale.y, eyeY, 25, dt), 1);

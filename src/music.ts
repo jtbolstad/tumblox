@@ -458,6 +458,19 @@ function tick() {
   }
 }
 
+/**
+ * Where the music is right now, counted in beats (fractional, keeps rising), corrected for output latency
+ * so dancers move with what is heard. Null while the music is silent.
+ */
+export function musicBeat(): number | null {
+  const o = musicOutput();
+  if (!o || nextTime === 0) return null;
+  const heard = o.c.currentTime - (o.c.outputLatency || o.c.baseLatency || 0);
+  const step = nextStep - (nextTime - heard) / current.step;
+  // 4/4 tracks count eighths, 6/8 tracks dotted quarters
+  return step / (current.stepsPerBar === 6 ? 3 : 2);
+}
+
 /** Start the scheduler once; it stays silent until audio is unlocked and the music volume is up. */
 export function initMusic() {
   if (timer === undefined) timer = setInterval(tick, 100);

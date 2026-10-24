@@ -1,3 +1,4 @@
+import type { Brief } from './brief';
 import type { Goal, Level } from './level';
 import { MAX_PLAYERS, type PartyMode, partyModeFor } from './party';
 import type { LevelProgress } from './progress';
@@ -57,6 +58,8 @@ export function createUi(handlers: UiHandlers) {
   const partyBox = el('party');
   const toastBox = el('toast');
   const calloutBox = el('callout');
+  const banner = el('banner');
+  let bannerTimer: ReturnType<typeof setTimeout> | undefined;
   let players = 1;
   let shown: { levels: readonly Level[]; progress: Record<string, LevelProgress> } | null = null;
   let toastTimer: ReturnType<typeof setTimeout> | undefined;
@@ -148,6 +151,7 @@ export function createUi(handlers: UiHandlers) {
       renderMenu();
       result.hidden = true;
       title.hidden = true;
+      banner.hidden = true;
       menu.hidden = false;
     },
     /** Scoreboard in the HUD; null clears it for solo play. */
@@ -170,6 +174,28 @@ export function createUi(handlers: UiHandlers) {
       calloutBox.classList.remove('show');
       void calloutBox.offsetWidth; // restart the CSS animation
       calloutBox.classList.add('show');
+    },
+    /** The start-of-level card: what to do here. Stays a few seconds, or until the player acts. */
+    showBanner(brief: Brief, seconds = 5) {
+      banner.replaceChildren(
+        Object.assign(document.createElement('div'), { className: 'title', textContent: brief.title }),
+        Object.assign(document.createElement('div'), { className: 'goal', textContent: brief.goal }),
+        ...brief.lines.map((line) =>
+          Object.assign(document.createElement('div'), { className: 'line', textContent: line }),
+        ),
+      );
+      banner.hidden = false;
+      banner.classList.remove('leaving');
+      clearTimeout(bannerTimer);
+      bannerTimer = setTimeout(() => this.hideBanner(), seconds * 1000);
+    },
+    hideBanner() {
+      if (banner.hidden || banner.classList.contains('leaving')) return;
+      clearTimeout(bannerTimer);
+      banner.classList.add('leaving'); // fades out, then hides
+      bannerTimer = setTimeout(() => {
+        banner.hidden = true;
+      }, 350);
     },
     /** Short message over the playfield that fades by itself. */
     toast(text: string) {
