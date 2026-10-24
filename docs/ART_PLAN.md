@@ -1,6 +1,6 @@
 # Look, Sound & Feel Plan
 
-As of 2026-10-24 · Companion to `PLAN.md` (replaces its Phase 4 line "Final name, logo, original art and music; launch page")
+As of 2026-10-24 · Companion to `docs/PLAN.md` (replaces its Phase 4 line "Final name, logo, original art and music; launch page")
 
 ## Summary
 
@@ -12,7 +12,7 @@ The gameplay works, but the game still looks like a prototype: flat-coloured box
 
 ## What the original felt like
 
-This summary comes from reviews and previews; footage hasn't been reviewed yet. Watch the YouTube links in `PLAN.md` ("Reference media") and note anything below that doesn't match.
+This summary comes from reviews and previews; footage hasn't been reviewed yet. Watch the YouTube links in `docs/PLAN.md` ("Reference media") and note anything below that doesn't match.
 
 | Area        | What reviewers saw                                                                                                                                                                                                                                                                                                                                                                                                                             | Take for us                                                         |
 | ----------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------- |
@@ -85,7 +85,7 @@ Driven by the existing `theme` field in `src/level.ts`. Props are decoration onl
 | Dusty Gulch            | hot orange sky, red rock mesa           | cacti, barrels, water tower, cow skull             | banjo hoedown in 2/4                      |
 | Spooky Manor           | purple night, moon                      | tombstones, pumpkins, dead trees, manor silhouette | minor harpsichord waltz with a "theremin" |
 - [x] Theme system: sky colours, island materials, light, pedestal, prop set, distant scenery (`src/themes.ts`, `src/props.ts`); music track and ambient sound bed per world moved to stage E
-- [x] All five themes; existing levels regrouped into worlds (Meadow 1–6, Tiki 7–12, Castle 13–18, Gulch 19–24, Manor 25–28); the Explore/Adventure structure in `PLAN.md` Phase 2 is still open
+- [x] All five themes; existing levels regrouped into worlds (Meadow 1–6, Tiki 7–12, Castle 13–18, Gulch 19–24, Manor 25–28); the Explore/Adventure structure in `docs/PLAN.md` Phase 2 is still open
 - [x] World map with level isles instead of the card grid (moved here from stage F)
 
 ### D. Characters (cube animals)

@@ -76,7 +76,7 @@ step, zero behavior change. Tick boxes as steps land.
   `handleRemote`, `remoteCommand` and `updateRemoteState` stay in main.ts — they're wired
   into party/phase/grab/spraying/launch state deeply enough that extracting them would
   mean threading ~15 getters/setters for no real decoupling, just code motion. Done
-  alongside the TV-mode work (see `TV_MODE_PLAN.md`), which touched this same area anyway.
+  alongside the TV-mode work (see `docs/TV_MODE_PLAN.md`), which touched this same area anyway.
 - [x] 11. **hud-panels.ts** — mute/sound/lang/quality button wiring, as `createHudPanels`.
   `QUALITIES`/`Quality` moved here (main.ts imports them back); `quality` stays a `let` in
   main.ts behind `getQuality`/`setQuality`, with `applyQuality` passed in.
