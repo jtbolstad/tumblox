@@ -1273,22 +1273,6 @@ export function buildProps(
     water.position.y = -0.7; // just under the island top, hiding the rocky underside
     group.add(water);
   }
-  if (theme === 'pirate') {
-    // a lagoon pool right at the island's own surface, in front of the ship, that the pedestal floats on
-    const poolR = Math.max(CLEAR_RADIUS, pedestalHalf + 1.5) * 0.95;
-    const rim = new THREE.Mesh(
-      new THREE.RingGeometry(poolR * 0.86, poolR, 48).rotateX(-Math.PI / 2),
-      new THREE.MeshStandardMaterial({ color: 0xcdb27a, roughness: 0.95 }),
-    );
-    rim.position.y = 0.01;
-    group.add(rim);
-    const pool = new THREE.Mesh(
-      new THREE.CircleGeometry(poolR * 0.87, 48).rotateX(-Math.PI / 2),
-      new THREE.MeshStandardMaterial({ color: THEMES.pirate.sea, roughness: 0.2, metalness: 0.15 }),
-    );
-    pool.position.y = 0.02;
-    group.add(pool);
-  }
   group.add(island.sailGroup);
   return { group, spots: island.free, solids: stands.solids, sails: island.sails };
 }
