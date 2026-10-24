@@ -3,7 +3,7 @@
   "name": "Soak It",
   "theme": "manor",
   "tool": "hose",
-  "throws": 8,
+  "throws": 5,
   "goal": {
     "type": "clearBoard"
   },

@@ -1,6 +1,6 @@
 {
-  "name": "Tumble Isle",
-  "short_name": "Tumble Isle",
+  "name": "Tumble",
+  "short_name": "Tumble",
   "description": "Throw, grab and blast blocks to solve short physics puzzles.",
   "start_url": "./",
   "scope": "./",

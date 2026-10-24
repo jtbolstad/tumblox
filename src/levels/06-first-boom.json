@@ -3,7 +3,7 @@
   "name": "First Boom",
   "theme": "meadow",
   "tool": "ball",
-  "throws": 2,
+  "throws": 5,
   "goal": {
     "type": "toppleGems"
   },

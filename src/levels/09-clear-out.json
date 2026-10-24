@@ -3,7 +3,7 @@
   "name": "Clear Out",
   "theme": "tiki",
   "tool": "ball",
-  "throws": 3,
+  "throws": 5,
   "goal": {
     "type": "clearBoard"
   },

@@ -3,7 +3,7 @@
   "name": "Fortress",
   "theme": "castle",
   "tool": "bomb",
-  "throws": 3,
+  "throws": 5,
   "goal": {
     "type": "toppleGems"
   },

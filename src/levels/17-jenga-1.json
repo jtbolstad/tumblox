@@ -3,7 +3,7 @@
   "name": "Jenga Jr.",
   "theme": "castle",
   "tool": "grab",
-  "throws": 6,
+  "throws": 5,
   "goal": {
     "type": "jenga",
     "remove": 3

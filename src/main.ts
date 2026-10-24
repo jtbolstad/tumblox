@@ -26,7 +26,7 @@ import {
 import { BLOCKS, type BlockType } from './blocks';
 import { levelBrief } from './brief';
 import {
-  CHARACTER_IDS,
+  crowdKinds,
   CHARACTERS,
   type CharacterKind,
   CharacterRig,
@@ -313,6 +313,30 @@ function applyTheme(id: ThemeId) {
   renderer.shadowMap.needsUpdate = true;
   setTrack(id);
   setAmbience(id);
+}
+
+// circus look: dark surroundings, a warm spotlight on the stage (the title is darkest)
+const stageSpot = new THREE.SpotLight(0xfff0d0, 0, 0, 0.62, 0.5);
+stageSpot.position.set(0, 18, 15);
+scene.add(stageSpot, stageSpot.target);
+
+function applyStageLight(title: boolean) {
+  const t = THEMES[themeId ?? 'meadow'];
+  const dark = title ? 0.25 : t.stageDark; // how much of the world's own light is left
+  const daylight = !title && dark >= 0.6; // meadow and tiki keep their own sun and rim colour
+  sun.intensity = t.sun.intensity * dark;
+  rim.color.set(title || daylight ? t.rim : 0xff8a6a);
+  rim.intensity = title ? 0.3 : daylight ? 0.9 : 0.5;
+  hemi.intensity = t.hemi.intensity * (title ? 0.35 : daylight ? 0.85 : 0.4);
+  renderer.toneMappingExposure = title ? 0.9 : daylight ? 1 : 0.9;
+  scene.environmentIntensity = title ? 0.3 : daylight ? 0.8 : 0.3; // the reflection probe lights blocks too
+  // the sky shader ignores exposure, so dim it (and the fog it fades into) by hand
+  const dim = (c: number) => new THREE.Color(c).multiplyScalar(dark).getHex();
+  setSkyColors(sky, { top: dim(t.sky.top), horizon: dim(t.sky.horizon), bottom: dim(t.sky.bottom) });
+  background.set(dim(t.sky.horizon));
+  fog.color.set(dim(t.sky.horizon));
+  stageSpot.intensity = title ? 7500 : daylight ? 2200 : 4500;
+  stageSpot.target.position.set(0, title ? 3.5 : level.platform.top + 2, 0);
 }
 
 const controls = new OrbitControls(camera, canvas);
@@ -647,9 +671,11 @@ function loadLevel(index: number) {
   levelIndex = index;
   level = index === TITLE_INDEX ? titleScene : levels[index];
   applyTheme(level.theme);
+  applyStageLight(index === TITLE_INDEX);
   applyProps(level.theme, Math.max(...level.platform.size) / 2, level.id);
   resetCrowd(); // back on their perches, and known to the collision lookup again (clearLevel emptied it)
   throwsUsed = 0;
+  lastThrowAt = -Infinity;
   simTime = 0;
   lastMotion = 0;
   lastStats = '';
@@ -820,12 +846,16 @@ function frameCamera() {
   const top = level.platform.top;
   // far enough to fit the structure's width at this aspect ratio too (wide levels, portrait phones)
   const halfWidthTan = Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)) * camera.aspect;
-  const fitWidth = (maxX + 1) / halfWidthTan + 2;
+  // the title sign fills the width of the screen, centred on the letters
+  const onTitle = level === titleScene;
+  const fitWidth = onTitle ? (maxX + 2) / halfWidthTan : (maxX + 1) / halfWidthTan + 2;
   // the wide title may need more room than the usual zoom limit on a portrait phone
   controls.maxDistance = Math.max(MAX_ZOOM_OUT, fitWidth + 1);
-  const dist = Math.min(Math.max(9 + maxY * 1.4 + maxX * 1.2, 11, fitWidth), controls.maxDistance - 1);
+  const dist = onTitle
+    ? Math.min(fitWidth, controls.maxDistance - 1)
+    : Math.min(Math.max(7 + maxY * 1.1 + maxX * 1.0, 9, fitWidth), controls.maxDistance - 1);
   controls.target.set(0, top + maxY / 2, 0);
-  camera.position.set(0, top + maxY * 0.7 + 2.5, dist);
+  camera.position.set(0, onTitle ? top + maxY / 2 : top + maxY * 0.45 + 1.5, dist); // the title is seen straight on
   controls.update();
 }
 
@@ -895,10 +925,18 @@ function startIntro() {
   if (levelIndex !== TITLE_INDEX) ui.showBanner(levelBrief(level, levelIndex + 1));
   if (reducedMotion) return;
   introTo.copy(camera.position);
+  // a different swoop each level: either side, any sweep up to a half turn, varied height and distance
+  introSweep = (Math.random() < 0.5 ? -1 : 1) * (0.8 + Math.random() * 1.6);
+  introRise = 3 + Math.random() * 7;
+  introPull = 0.4 + Math.random() * 0.8;
   introT = 0;
   controls.enabled = false;
   updateIntro(0);
 }
+
+let introSweep = 1.4;
+let introRise = 6;
+let introPull = 0.8;
 
 function skipIntro() {
   if (introT >= 1) return;
@@ -914,8 +952,8 @@ function updateIntro(dt: number) {
   introT = Math.min(introT + dt / INTRO_SECONDS, 1);
   const away = (1 - introT) ** 3;
   orbitOffset.copy(introTo).sub(controls.target);
-  orbitOffset.applyAxisAngle(THREE.Object3D.DEFAULT_UP, away * 1.4).multiplyScalar(1 + away * 0.8);
-  orbitOffset.y += away * 6;
+  orbitOffset.applyAxisAngle(THREE.Object3D.DEFAULT_UP, away * introSweep).multiplyScalar(1 + away * introPull);
+  orbitOffset.y += away * introRise;
   camera.position.copy(controls.target).add(orbitOffset);
   camera.lookAt(controls.target);
   if (introT >= 1) skipIntro();
@@ -1519,9 +1557,18 @@ let samples: PointerSample[] = [];
 let throwPointer: number | null = null;
 const activeTouches = new Set<number>();
 
+/** Least time between two throws, in ms. */
+const THROW_COOLDOWN = 2000;
+let lastThrowAt = -Infinity;
+
 function canThrow() {
   // party: one action per turn; the title scene takes free throws
-  return (phase === 'playing' || phase === 'title') && throwsLeft() > 0 && !turnActive;
+  return (
+    (phase === 'playing' || phase === 'title') &&
+    throwsLeft() > 0 &&
+    !turnActive &&
+    performance.now() - lastThrowAt >= THROW_COOLDOWN
+  );
 }
 
 function isGrabTool() {
@@ -1783,6 +1830,11 @@ addEventListener('keydown', (ev) => {
   if (ev.code === 'Space') {
     ev.preventDefault();
     if (!ev.repeat) spaceDown();
+  } else if ((ev.code === 'Enter' || ev.code === 'NumpadEnter') && phase !== 'menu' && !ev.repeat) {
+    const el = document.activeElement;
+    if (el instanceof HTMLButtonElement || el instanceof HTMLInputElement) return; // keep Enter for focused UI
+    ev.preventDefault();
+    frameCamera();
   } else if (ev.code === 'KeyR' && phase !== 'menu') {
     restart();
   } else if (AIM_KEYS.includes(ev.code) || ['KeyQ', 'KeyE', 'KeyZ', 'KeyX'].includes(ev.code)) {
@@ -1872,6 +1924,7 @@ function launch(px: number, py: number, flickSpeed: number) {
     hudTier.textContent = tierNames[s.tier];
   }
   throwsUsed++;
+  lastThrowAt = performance.now();
   lastMotion = simTime;
   if (party) turnActive = true;
   refreshStats();
@@ -2072,7 +2125,8 @@ function buildCrowd() {
   removeCrowd();
   if (!themeId) return;
   const rand = seeded(crowdSeed);
-  const natives = THEMES[themeId].crowd;
+  const palette = crowdKinds(themeId, THEMES[themeId].crowd, level.characters.map((c) => c.kind));
+  const natives = THEMES[themeId].crowd.filter((k) => palette.includes(k));
   const count = QUALITY_SETTINGS[quality].crowd;
   const shuffle = <T>(list: T[]) =>
     list
@@ -2082,9 +2136,11 @@ function buildCrowd() {
   const ground = shuffle(crowdSpots.filter((s) => s.ground));
   const stands = shuffle(crowdSpots.filter((s) => !s.ground));
   const picks = [...ground.slice(0, Math.ceil(count / 4)), ...stands].slice(0, count);
-  for (const spot of picks) {
-    const pool = rand() < 0.5 ? natives : CHARACTER_IDS;
-    const kind: CharacterKind = pool[Math.floor(rand() * pool.length)];
+  for (const [n, spot] of picks.entries()) {
+    const pool = rand() < 0.5 && natives.length > 0 ? natives : palette;
+    const pick: CharacterKind = pool[Math.floor(rand() * pool.length)];
+    // every third spectator on Tiki Isle is a totem, whenever the 5-kind cap leaves room for it
+    const kind: CharacterKind = themeId === 'tiki' && n % 3 === 0 && palette.includes('totem') ? 'totem' : pick;
     const def = CHARACTERS[kind];
     const rig = new CharacterRig(kind, false, themeId); // no shadows: a crowd of shadow casters costs too much
     rig.danceStyle = Math.floor(rand() * 3);
@@ -2227,7 +2283,7 @@ function updateCrowd(dt: number) {
         s.idleMood = IDLE_ROUTINE[Math.floor(Math.random() * IDLE_ROUTINE.length)];
         s.nextChange = now + 2500 + Math.random() * 4000;
       }
-      mood = s.idleMood;
+      mood = s.entity.kind === 'totem' ? 'dance' : s.idleMood; // totems never stop dancing
     }
     rig.mood = mood;
     // everyone watches the ball in flight, otherwise the action on the pedestal

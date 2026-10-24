@@ -3,7 +3,7 @@
   "name": "Zap Tower",
   "theme": "manor",
   "tool": "laser",
-  "throws": 4,
+  "throws": 5,
   "goal": {
     "type": "toppleGems"
   },

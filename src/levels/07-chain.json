@@ -3,7 +3,7 @@
   "name": "Chain Reaction",
   "theme": "tiki",
   "tool": "ball",
-  "throws": 2,
+  "throws": 5,
   "goal": {
     "type": "toppleGems"
   },

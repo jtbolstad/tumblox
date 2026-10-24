@@ -3,7 +3,7 @@
   "name": "Vanishing Act",
   "theme": "tiki",
   "tool": "ball",
-  "throws": 3,
+  "throws": 5,
   "goal": {
     "type": "toppleGems"
   },

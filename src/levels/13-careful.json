@@ -3,7 +3,7 @@
   "name": "Careful Now",
   "theme": "castle",
   "tool": "ball",
-  "throws": 3,
+  "throws": 5,
   "goal": {
     "type": "scoreTarget",
     "target": 200

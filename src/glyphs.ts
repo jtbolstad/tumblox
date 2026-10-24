@@ -4,7 +4,7 @@
  */
 import type { BlockType } from './blocks';
 
-export const GAME_NAME = 'Tumble Isle';
+export const GAME_NAME = 'Tumble';
 
 /** Block type per letter, which sets its colour. The M is all bombs, so a good hit sets off the word. */
 export const LETTER_TYPES: BlockType[] = [

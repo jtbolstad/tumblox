@@ -26,6 +26,10 @@ export interface ThemeDef {
   arena: number[];
   /** arena blocks are built of stone bricks rather than painted smooth */
   arenaMasonry?: boolean;
+  /** arena blocks are built of wooden planks */
+  arenaPlanks?: boolean;
+  /** how much of the world's own light stays on in the circus-dark stage look: 1 = full daylight */
+  stageDark: number;
   /** who comes to watch */
   crowd: CharacterKind[];
 }
@@ -43,11 +47,12 @@ export const THEMES: Record<ThemeId, ThemeDef> = {
     pedestal: 0xc8a27a,
     cloud: 0xe4f1ff,
     arena: [0xc9c3e6, 0xb8e6d4, 0xf2c4ce, 0xf6d6b8, 0xc4e0f2],
+    stageDark: 0.8,
     crowd: ['goat', 'hen', 'fox', 'owl'],
   },
   tiki: {
     name: 'Tiki Isle',
-    sky: { top: 0x5b8fd6, horizon: 0xffd1a8, bottom: 0x8fd3d8 },
+    sky: { top: 0x2f7fe0, horizon: 0xbfe6ff, bottom: 0x7fd0e0 },
     ground: 0xf0d9a0,
     earth: 0xd9b77a,
     deep: 0x9c7b4f,
@@ -58,7 +63,9 @@ export const THEMES: Record<ThemeId, ThemeDef> = {
     sea: 0x3fb7c4,
     cloud: 0xffe9d9,
     arena: [0xf6d6a8, 0x9fe0d8, 0xf6b8a0, 0xfff0c8, 0xa8d8f0],
-    crowd: ['frog', 'parrot', 'fox', 'hen'],
+    arenaPlanks: true,
+    stageDark: 0.8,
+    crowd: ['frog', 'parrot', 'totem', 'hen'],
   },
   castle: {
     name: 'Castle Hill',
@@ -75,6 +82,7 @@ export const THEMES: Record<ThemeId, ThemeDef> = {
     // stone tones like the pedestal; the arena is bricked in this world
     arena: [0xd2cdc0, 0xc4beb0, 0xdcd6c8, 0xbcb6a8, 0xcac6bc],
     arenaMasonry: true,
+    stageDark: 0.3,
     crowd: ['pig', 'goat', 'owl', 'hen'],
   },
   gulch: {
@@ -88,7 +96,9 @@ export const THEMES: Record<ThemeId, ThemeDef> = {
     rim: 0xffc48a,
     pedestal: 0xb9774f,
     cloud: 0xfff0dc,
-    arena: [0xf0c8a0, 0xe8b090, 0xf6dcb0, 0xd8a890, 0xf0d0c0],
+    arena: [0xd9985f, 0xe0b070, 0xc4704a, 0xe8cf9c, 0xa88060],
+    arenaPlanks: true,
+    stageDark: 0.3,
     crowd: ['armadillo', 'fox', 'hen', 'goat'],
   },
   manor: {
@@ -103,6 +113,7 @@ export const THEMES: Record<ThemeId, ThemeDef> = {
     pedestal: 0x7a6578,
     cloud: 0x8a80b8,
     arena: [0x6a5a8a, 0x5a6a8a, 0x7a5a7a, 0x4a6a6a, 0x8a7aa0],
+    stageDark: 0.3,
     crowd: ['bat', 'ghost', 'owl', 'fox'],
   },
 };

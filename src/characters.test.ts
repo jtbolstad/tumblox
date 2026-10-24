@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { type MoodInput, moodFor } from './characters';
+import { crowdKinds, type MoodInput, moodFor } from './characters';
 import { parseLevel } from './level';
 
 const calm: MoodInput = { result: null, role: 'decor', speed: 0, spin: 0, ballNear: false, shaking: false };
@@ -40,5 +40,23 @@ describe('level characters', () => {
     expect(() => parseLevel({ ...base, characters: [{ kind: 'dragon', pos: [0, 0, 0] }] })).toThrow();
     const seven = Array.from({ length: 7 }, () => ({ kind: 'hen', pos: [0, 0, 0] }));
     expect(() => parseLevel({ ...base, characters: seven })).toThrow();
+  });
+});
+
+describe('crowdKinds', () => {
+  it('keeps world exclusives to their world', () => {
+    for (const theme of ['meadow', 'castle', 'gulch'] as const) {
+      const kinds = crowdKinds(theme, ['goat', 'totem', 'ghost'], []);
+      expect(kinds).not.toContain('totem');
+      expect(kinds).not.toContain('ghost');
+    }
+    expect(crowdKinds('tiki', ['totem'], [])).toContain('totem');
+    expect(crowdKinds('manor', ['ghost'], [])).toContain('ghost');
+  });
+
+  it('never shows more than 5 kinds with the level characters', () => {
+    const kinds = crowdKinds('tiki', ['frog', 'parrot', 'totem', 'hen'], ['goat', 'bat']);
+    expect(kinds.length).toBeLessThanOrEqual(5);
+    expect(kinds).toEqual(expect.arrayContaining(['goat', 'bat']));
   });
 });

@@ -2,7 +2,7 @@ import { GAME_NAME, LETTER_TYPES, layoutText } from './glyphs';
 import { type Level, parseLevel } from './level';
 
 /** Edge of one title block, in metres. */
-export const TITLE_BLOCK = 0.5;
+export const TITLE_BLOCK = 0.9;
 
 /** The title screen as a level: the game name built from blocks, free throws, no goal. */
 export function titleLevel(): Level {

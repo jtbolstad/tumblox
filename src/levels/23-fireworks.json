@@ -1,7 +1,7 @@
 {
   "theme": "gulch",
   "tool": "ball",
-  "throws": 3,
+  "throws": 5,
   "id": "fireworks",
   "name": "Fireworks",
   "goal": {

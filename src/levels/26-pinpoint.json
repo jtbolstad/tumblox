@@ -3,7 +3,7 @@
   "name": "Pinpoint",
   "theme": "manor",
   "tool": "laser",
-  "throws": 3,
+  "throws": 5,
   "goal": {
     "type": "scoreTarget",
     "target": 300

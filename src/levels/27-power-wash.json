@@ -3,7 +3,7 @@
   "name": "Power Wash",
   "theme": "manor",
   "tool": "hose",
-  "throws": 6,
+  "throws": 5,
   "goal": {
     "type": "toppleGems"
   },

@@ -18,6 +18,7 @@ export const CHARACTER_IDS = [
   'ghost',
   'fox',
   'owl',
+  'totem',
 ] as const;
 export type CharacterKind = (typeof CHARACTER_IDS)[number];
 
@@ -38,6 +39,8 @@ export interface CharacterDef {
   translucent?: boolean;
   /** already wears headwear (helmet, hat), so costumes skip the hat */
   hatted?: boolean;
+  /** only ever appears in this world (as spectator or in a level) */
+  only?: ThemeId;
 }
 
 export const CHARACTERS: Record<CharacterKind, CharacterDef> = {
@@ -48,10 +51,25 @@ export const CHARACTERS: Record<CharacterKind, CharacterDef> = {
   pig: { name: 'Pig squire', size: [0.75, 0.85, 0.65], density: 0.8, voice: 0.9, hatted: true },
   armadillo: { name: 'Armadillo', size: [0.75, 0.75, 0.7], density: 0.9, voice: 0.85, hatted: true },
   bat: { name: 'Bat', size: [0.6, 0.65, 0.5], density: 0.3, voice: 1.8 },
-  ghost: { name: 'Ghost', size: [0.7, 0.95, 0.6], density: 0.3, voice: 0.7, translucent: true },
+  ghost: { name: 'Ghost', size: [0.7, 0.95, 0.6], density: 0.3, voice: 0.7, translucent: true, only: 'manor' },
   fox: { name: 'Fox', size: [0.6, 0.85, 0.6], density: 0.6, voice: 1.2 },
   owl: { name: 'Owl', size: [0.6, 0.85, 0.55], density: 0.4, voice: 0.95 },
+  totem: { name: 'Tiki totem', size: [0.6, 0.95, 0.55], density: 1.1, voice: 0.6, hatted: true, only: 'tiki' },
 };
+
+/** Most different kinds of character on screen at once, level characters and crowd together. */
+export const MAX_KINDS_PER_SCENE = 5;
+
+/** The kinds a world's crowd is drawn from: no other world's exclusives, and at most 5 kinds with the level's own. */
+export function crowdKinds(theme: ThemeId, natives: CharacterKind[], levelKinds: CharacterKind[]): CharacterKind[] {
+  const allowed = (k: CharacterKind) => !CHARACTERS[k].only || CHARACTERS[k].only === theme;
+  const kinds = new Set<CharacterKind>(levelKinds);
+  for (const k of [...natives, ...CHARACTER_IDS]) {
+    if (kinds.size >= MAX_KINDS_PER_SCENE) break;
+    if (allowed(k)) kinds.add(k);
+  }
+  return [...kinds].filter(allowed);
+}
 
 export interface MoodInput {
   /** set once the level is decided */
@@ -290,6 +308,37 @@ const LOOKS: Record<CharacterKind, () => Look> = {
     eyeAt: [0, 0.24, 0.18],
     arm: arm(0xe8803a, 0x3a2a24, 0.22),
     shoulder: [0.29, 0.02, 0.04],
+  }),
+  // carved tiki pole: stacked wooden blocks, a grinning face under a feather crown, plank wings
+  totem: () => ({
+    body: [
+      p(box(0.5, 0.62, 0.46), 0x8a5a34, [0, -0.17, 0]),
+      p(box(0.54, 0.1, 0.5), 0xc0504d, [0, -0.36, 0]),
+      p(box(0.54, 0.08, 0.5), 0xf2b134, [0, -0.2, 0]),
+      p(box(0.54, 0.1, 0.5), 0x3f9e4a, [0, -0.04, 0]),
+      p(box(0.3, 0.1, 0.03), 0xe8d8b8, [0, -0.28, 0.24]),
+    ],
+    head: [
+      p(box(0.5, 0.44, 0.46), 0xa8703f, [0, 0.22, 0]),
+      p(box(0.52, 0.07, 0.42), 0x5a3a20, [0, 0.38, 0.02]),
+      p(box(0.12, 0.14, 0.12), 0x7a4a28, [0, 0.16, 0.27]),
+      p(box(0.28, 0.1, 0.03), 0x2a1a12, [0, 0.03, 0.24]),
+      p(box(0.06, 0.06, 0.03), 0xfff4e8, [-0.08, 0.04, 0.26]),
+      p(box(0.06, 0.06, 0.03), 0xfff4e8, [0.08, 0.04, 0.26]),
+      p(box(0.1, 0.12, 0.1), 0xc0504d, [-0.3, 0.24, 0]),
+      p(box(0.1, 0.12, 0.1), 0xc0504d, [0.3, 0.24, 0]),
+      p(box(0.07, 0.3, 0.04), 0xff5d8f, [-0.12, 0.58, -0.02], [0, 0, 0.25]),
+      p(box(0.07, 0.36, 0.04), 0xf2b134, [0, 0.6, -0.02]),
+      p(box(0.07, 0.3, 0.04), 0x3fb7c4, [0.12, 0.58, -0.02], [0, 0, -0.25]),
+    ],
+    eyes: eyes(0.1, 0.1, true),
+    neck: [0, 0.06, 0],
+    eyeAt: [0, 0.27, 0.24],
+    arm: [
+      p(box(0.07, 0.3, 0.2), 0x8a5a34, [0.04, -0.15, 0]),
+      p(box(0.09, 0.06, 0.22), 0xc0504d, [0.04, -0.3, 0]),
+    ],
+    shoulder: [0.28, 0.0, 0],
   }),
   owl: () => ({
     body: [

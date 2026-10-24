@@ -3,7 +3,7 @@
   "name": "Tall Order",
   "theme": "castle",
   "tool": "grab",
-  "throws": 8,
+  "throws": 5,
   "goal": {
     "type": "jenga",
     "remove": 5

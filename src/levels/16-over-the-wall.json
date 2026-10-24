@@ -3,7 +3,7 @@
   "name": "Over the Wall",
   "theme": "castle",
   "tool": "bouncy",
-  "throws": 3,
+  "throws": 5,
   "goal": {
     "type": "toppleGems"
   },
