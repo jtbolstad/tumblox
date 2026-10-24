@@ -5,6 +5,7 @@
 export type RemoteMsg =
   | { t: 'identify'; slot: number } // the first thing a phone sends: which player it is (0-based)
   | { t: 'aim'; yaw: number; pitch: number } // degrees away from the calibrated "straight ahead"
+  | { t: 'orbit'; dx: number; dy: number } // a joystick held off-centre, each axis -1..1
   | { t: 'down' } // a finger went down on the phone's pad
   // it came up; `speed` is the swipe speed in px/s, `holdMs` how long the finger was down
   // (a held press with little swipe charges power the way holding Space does on the keyboard)
@@ -42,6 +43,10 @@ export const AIM_RANGE_DEG = { x: 30, y: 18 };
 /** Phone swipe speeds are scaled to match the flick speeds the throw tiers were tuned on. */
 export const REMOTE_SPEED_SCALE = 1.3;
 
+/** rad of camera turn/tilt per 'orbit' message at full joystick deflection (sent ~30 times a second). */
+export const ORBIT_YAW_SPEED = 0.045;
+export const ORBIT_TILT_SPEED = 0.025;
+
 /** An angle in degrees folded into (-180, 180]. */
 export function wrapDeg(d: number): number {
   const r = ((((d + 180) % 360) + 360) % 360) - 180;
@@ -62,14 +67,36 @@ export function parseRemoteMsg(data: unknown): RemoteMsg | null {
   const m = data as Record<string, unknown>;
   const num = (v: unknown) => typeof v === 'number' && Number.isFinite(v);
   if (m.t === 'aim' && num(m.yaw) && num(m.pitch)) {
-    return { t: 'aim', yaw: Math.max(-180, Math.min(180, m.yaw as number)), pitch: Math.max(-90, Math.min(90, m.pitch as number)) };
+    return {
+      t: 'aim',
+      yaw: Math.max(-180, Math.min(180, m.yaw as number)),
+      pitch: Math.max(-90, Math.min(90, m.pitch as number)),
+    };
+  }
+  if (m.t === 'orbit' && num(m.dx) && num(m.dy)) {
+    return {
+      t: 'orbit',
+      dx: Math.max(-1, Math.min(1, m.dx as number)),
+      dy: Math.max(-1, Math.min(1, m.dy as number)),
+    };
   }
   if (m.t === 'down') return { t: 'down' };
-  if (m.t === 'identify' && Number.isInteger(m.slot) && (m.slot as number) >= 0 && (m.slot as number) < MAX_REMOTE_SLOTS) {
+  if (
+    m.t === 'identify' &&
+    Number.isInteger(m.slot) &&
+    (m.slot as number) >= 0 &&
+    (m.slot as number) < MAX_REMOTE_SLOTS
+  ) {
     return { t: 'identify', slot: m.slot as number };
   }
-  if (m.t === 'cmd' && (REMOTE_COMMANDS as readonly unknown[]).includes(m.cmd)) return { t: 'cmd', cmd: m.cmd as RemoteCommand };
-  if (m.t === 'select' && Number.isInteger(m.index) && (m.index as number) >= 0 && (m.index as number) < 1000) {
+  if (m.t === 'cmd' && (REMOTE_COMMANDS as readonly unknown[]).includes(m.cmd))
+    return { t: 'cmd', cmd: m.cmd as RemoteCommand };
+  if (
+    m.t === 'select' &&
+    Number.isInteger(m.index) &&
+    (m.index as number) >= 0 &&
+    (m.index as number) < 1000
+  ) {
     return { t: 'select', index: m.index as number };
   }
   if (m.t === 'up' && num(m.speed)) {
@@ -87,7 +114,12 @@ export function parseHostMsg(data: unknown): HostMsg | null {
   if (typeof data !== 'object' || data === null) return null;
   const m = data as Record<string, unknown>;
   const phases = ['title', 'menu', 'playing', 'won', 'lost'];
-  if (m.t === 'state' && phases.includes(m.phase as string) && typeof m.level === 'number' && typeof m.name === 'string') {
+  if (
+    m.t === 'state' &&
+    phases.includes(m.phase as string) &&
+    typeof m.level === 'number' &&
+    typeof m.name === 'string'
+  ) {
     return {
       t: 'state',
       phase: m.phase as 'title' | 'menu' | 'playing' | 'won' | 'lost',

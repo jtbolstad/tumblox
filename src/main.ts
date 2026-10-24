@@ -41,6 +41,8 @@ import {
   aimToScreen,
   type HostMsg,
   MAX_REMOTE_SLOTS,
+  ORBIT_TILT_SPEED,
+  ORBIT_YAW_SPEED,
   REMOTE_SPEED_SCALE,
   type RemoteMsg,
 } from './remote-protocol';
@@ -1029,6 +1031,11 @@ function handleRemote(slot: number, m: Exclude<RemoteMsg, { t: 'identify' }>) {
     aim.x = at.x;
     aim.y = at.y;
     aim.visible = true;
+    return;
+  }
+  if (m.t === 'orbit') {
+    orbitCamera(m.dx * ORBIT_YAW_SPEED, 1, m.dy * ORBIT_TILT_SPEED);
+    controls.update();
     return;
   }
   if (m.t === 'down') {

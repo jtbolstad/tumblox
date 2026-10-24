@@ -14,6 +14,8 @@ const turnBanner = el('turn-banner');
 const connectBtn = el<HTMLButtonElement>('connect');
 const pad = el('pad');
 const tiltBall = el('tilt-ball');
+const orbitPad = el('orbit-pad');
+const orbitKnob = el('orbit-knob');
 const centerBtn = el('center');
 const speedBox = el('speed');
 const bar = el('bar');
@@ -187,6 +189,52 @@ function lift(ev: PointerEvent) {
 }
 pad.addEventListener('pointerup', lift);
 pad.addEventListener('pointercancel', lift);
+
+// the knob: drags off-centre to rotate/tilt the camera, independent of the tilt sensor that aims
+const ORBIT_RADIUS = 30; // px the knob can travel from centre, also how far a finger must drag for full speed
+let orbitDx = 0;
+let orbitDy = 0;
+let orbitSendTimer: ReturnType<typeof setInterval> | undefined;
+
+function updateOrbitKnob(ev: PointerEvent) {
+  const rect = orbitPad.getBoundingClientRect();
+  const dx = (ev.clientX - (rect.left + rect.width / 2)) / ORBIT_RADIUS;
+  const dy = (ev.clientY - (rect.top + rect.height / 2)) / ORBIT_RADIUS;
+  const len = Math.hypot(dx, dy) || 1;
+  const clamp = Math.min(1, len);
+  orbitDx = (dx / len) * clamp;
+  orbitDy = (dy / len) * clamp;
+  orbitKnob.style.transform = `translate(${orbitDx * ORBIT_RADIUS}px, ${orbitDy * ORBIT_RADIUS}px)`;
+}
+function releaseOrbitKnob() {
+  clearInterval(orbitSendTimer);
+  orbitSendTimer = undefined;
+  orbitDx = 0;
+  orbitDy = 0;
+  orbitKnob.style.transform = '';
+}
+orbitPad.addEventListener('pointerdown', (ev) => {
+  ev.stopPropagation(); // don't let the throw pad underneath see this finger too
+  orbitPad.setPointerCapture(ev.pointerId);
+  updateOrbitKnob(ev);
+  clearInterval(orbitSendTimer);
+  orbitSendTimer = setInterval(() => {
+    if (orbitDx !== 0 || orbitDy !== 0) send({ t: 'orbit', dx: orbitDx, dy: orbitDy });
+  }, 33);
+});
+orbitPad.addEventListener('pointermove', (ev) => {
+  if (!orbitPad.hasPointerCapture(ev.pointerId)) return;
+  ev.stopPropagation();
+  updateOrbitKnob(ev);
+});
+orbitPad.addEventListener('pointerup', (ev) => {
+  ev.stopPropagation();
+  releaseOrbitKnob();
+});
+orbitPad.addEventListener('pointercancel', (ev) => {
+  ev.stopPropagation();
+  releaseOrbitKnob();
+});
 
 // buttons: the same actions as the game's own screens
 function sendCmd(cmd: 'retry' | 'next' | 'menu' | 'title') {

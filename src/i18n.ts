@@ -54,8 +54,8 @@ const NB: Record<string, string> = {
   'Hold the phone like a wand and point at the screen to aim. Swipe up on the phone to throw, or press and hold to charge power.':
     'Hold mobilen som en tryllestav og pek mot skjermen for å sikte. Sveip opp på mobilen for å kaste, eller trykk og hold for å lade styrke.',
   'Swipe to throw, or press and hold': 'Sveip for å kaste, eller trykk og hold',
-  'Tilt and turn the phone to aim. A faster swipe throws harder, or hold your finger down to charge.':
-    'Vipp og vri mobilen for å sikte. Raskere sveip gir hardere kast, eller hold fingeren nede for å lade.',
+  'Tilt and turn the phone to aim. A faster swipe throws harder, or hold your finger down to charge. Drag the 🔄 knob to rotate the view.':
+    'Vipp og vri mobilen for å sikte. Raskere sveip gir hardere kast, eller hold fingeren nede for å lade. Dra i 🔄-knotten for å rotere kameraet.',
   'Tumble remote': 'Tumle-fjernkontroll',
   'Hold your phone like a wand and point it at the screen.':
     'Hold mobilen som en tryllestav og pek den mot skjermen.',
