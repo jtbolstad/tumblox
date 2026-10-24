@@ -32,10 +32,11 @@ import {
   type Blaster,
   type BlockEntity,
   type CharacterEntity,
-  type Entity,
+  capture,
   makeEntityBase,
   type Owner,
   type Phase,
+  speedOf,
 } from './entities';
 import { createFireworks } from './fireworks';
 import {
@@ -1369,15 +1370,6 @@ function worldAsleep() {
 }
 
 // ---------- fixed step + interpolation ----------
-function capture(e: Entity) {
-  const t = e.body.translation();
-  const r = e.body.rotation();
-  e.prevPos.copy(e.currPos);
-  e.prevRot.copy(e.currRot);
-  e.currPos.set(t.x, t.y, t.z);
-  e.currRot.set(r.x, r.y, r.z, r.w);
-}
-
 const tmpPos = new THREE.Vector3();
 const tmpRot = new THREE.Quaternion();
 const tmpMat = new THREE.Matrix4();
@@ -1407,11 +1399,6 @@ function syncRender(alpha: number) {
     e.mesh.position.lerpVectors(e.prevPos, e.currPos, alpha);
     e.mesh.quaternion.slerpQuaternions(e.prevRot, e.currRot, alpha);
   }
-}
-
-function speedOf(body: RAPIER.RigidBody) {
-  const v = body.linvel();
-  return Math.hypot(v.x, v.y, v.z);
 }
 
 const popupPos = new THREE.Vector3();

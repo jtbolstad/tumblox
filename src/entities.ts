@@ -64,3 +64,18 @@ export function makeEntityBase(body: RAPIER.RigidBody, collider: RAPIER.Collider
   const rot = new THREE.Quaternion(r.x, r.y, r.z, r.w);
   return { body, collider, prevPos: pos.clone(), currPos: pos, prevRot: rot.clone(), currRot: rot };
 }
+
+/** Snapshot the body's current transform into an entity's prev/curr pair, for render interpolation. */
+export function capture(e: Entity) {
+  const t = e.body.translation();
+  const r = e.body.rotation();
+  e.prevPos.copy(e.currPos);
+  e.prevRot.copy(e.currRot);
+  e.currPos.set(t.x, t.y, t.z);
+  e.currRot.set(r.x, r.y, r.z, r.w);
+}
+
+export function speedOf(body: RAPIER.RigidBody) {
+  const v = body.linvel();
+  return Math.hypot(v.x, v.y, v.z);
+}
