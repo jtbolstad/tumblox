@@ -27,14 +27,15 @@ import {
 import { BLOCKS, type BlockType } from './blocks';
 import { levelBrief } from './brief';
 import {
-  crowdKinds,
   CHARACTERS,
   type CharacterKind,
   CharacterRig,
+  crowdKinds,
   type Mood,
   moodFor,
   type Role,
 } from './characters';
+import { createFireworks } from './fireworks';
 import {
   Debris,
   disposeMesh,
@@ -43,10 +44,10 @@ import {
   Puffs,
   Shake,
   Shockwaves,
-  type ShellKind,
   Sparks,
   sparkTexture,
 } from './fx';
+import { lang, setLang, startTranslating } from './i18n';
 import { type Level, loadBundledLevels } from './level';
 import { blockTexture } from './marks';
 import { exciteMusic, initMusic, musicBeat, setTrack } from './music';
@@ -62,6 +63,15 @@ import {
 } from './party';
 import { loadProgress, recordResult } from './progress';
 import { buildProps, disposeGroup, type Solid, type Spot } from './props';
+import { missFor, quipFor } from './quips';
+import { drawRemoteQr, type RemoteHost, startRemoteHost } from './remote';
+import {
+  aimToScreen,
+  type HostMsg,
+  MAX_REMOTE_SLOTS,
+  REMOTE_SPEED_SCALE,
+  type RemoteMsg,
+} from './remote-protocol';
 import {
   type BlockState,
   type BlockStatus,
@@ -92,10 +102,6 @@ import {
 } from './scene';
 import { THEMES, type ThemeId } from './themes';
 import { chargeTier, type PointerSample, powerTier, releaseVelocity } from './throw';
-import { lang, setLang, startTranslating } from './i18n';
-import { drawRemoteQr, startRemoteHost, type RemoteHost } from './remote';
-import { aimToScreen, type HostMsg, MAX_REMOTE_SLOTS, REMOTE_SPEED_SCALE, type RemoteMsg } from './remote-protocol';
-import { missFor, quipFor } from './quips';
 import { titleLevel } from './title';
 import { TOOL_IDS, TOOLS, type ToolId } from './tools';
 import { createUi } from './ui';
@@ -451,6 +457,7 @@ const smoke = new Puffs(scene, 160, THREE.NormalBlending);
 const glow = new Puffs(scene, 120, THREE.AdditiveBlending);
 const shockwaves = new Shockwaves(scene);
 const debris = new Debris(scene);
+const fireworks = createFireworks({ camera, sparks, glow });
 
 /**
  * Black ink outline for the title letters: a back-face copy of the block pushed out along its normals by a fixed
@@ -696,7 +703,7 @@ function finishParty() {
   if (!party?.winners) return;
   phase = 'won';
   playStinger('win');
-  celebrate(30);
+  fireworks.celebrate(30, level.platform.top);
   const names = party.winners.map(playerLabel).join(' & ');
   const detail =
     party.mode === 'duel'
@@ -749,7 +756,7 @@ function loadLevel(index: number) {
   applyStageLight(index === TITLE_INDEX);
   applyProps(level.theme, Math.max(...level.platform.size) / 2, level.id);
   resetCrowd(); // back on their perches, and known to the collision lookup again (clearLevel emptied it)
-  rockets.length = 0;
+  fireworks.resetFireworks();
   throwsUsed = 0;
   lastThrowAt = -Infinity;
   simTime = 0;
@@ -823,7 +830,8 @@ function loadLevel(index: number) {
       material.emissive.copy(material.color);
       material.emissiveIntensity = 0.15;
     }
-    if (SHINY[type] && material instanceof THREE.MeshStandardMaterial) shinyMats.push({ mat: material, type });
+    if (SHINY[type] && material instanceof THREE.MeshStandardMaterial)
+      shinyMats.push({ mat: material, type });
     const mesh = new THREE.InstancedMesh(boxGeo, material, count);
     for (let i = 0; i < count; i++) mesh.setColorAt(i, WHITE); // per-block tint, used to mark the grabbed block
     mesh.castShadow = true;
@@ -988,7 +996,11 @@ function frameCamera(vary = false) {
   controls.target.set(0, top + maxY / 2, 0);
   const spread = vary && !onTitle ? Math.random() : 0.4;
   const height = top + maxY * 0.45 + 1.5 + (spread - 0.4) * (3 + maxY * 0.8); // from near ground level to a high view
-  camera.position.set(0, onTitle ? top + maxY / 2 : height, dist * (vary && !onTitle ? 0.9 + Math.random() * 0.25 : 1)); // the title is seen straight on
+  camera.position.set(
+    0,
+    onTitle ? top + maxY / 2 : height,
+    dist * (vary && !onTitle ? 0.9 + Math.random() * 0.25 : 1),
+  ); // the title is seen straight on
   controls.update();
 }
 
@@ -1085,7 +1097,9 @@ function updateIntro(dt: number) {
   introT = Math.min(introT + dt / INTRO_SECONDS, 1);
   const away = (1 - introT) ** 3;
   orbitOffset.copy(introTo).sub(controls.target);
-  orbitOffset.applyAxisAngle(THREE.Object3D.DEFAULT_UP, away * introSweep).multiplyScalar(1 + away * introPull);
+  orbitOffset
+    .applyAxisAngle(THREE.Object3D.DEFAULT_UP, away * introSweep)
+    .multiplyScalar(1 + away * introPull);
   orbitOffset.y += away * introRise;
   camera.position.copy(controls.target).add(orbitOffset);
   camera.lookAt(controls.target);
@@ -1725,59 +1739,6 @@ function stepPhysics() {
   }
 }
 
-// ---------- fireworks: rockets climb in front of the camera and burst into glowing sparks ----------
-interface Rocket {
-  /** when it lifts off, performance.now() */
-  at: number;
-  from: THREE.Vector3;
-  to: THREE.Vector3;
-  start: number | null;
-  kind: ShellKind;
-  colors: THREE.Color[];
-}
-const rockets: Rocket[] = [];
-const FIREWORK_COLORS = [0xff4d6d, 0xffd23f, 0x4dabff, 0x5eead4, 0xff8c42, 0xc084fc, 0xffffff, 0xa3e635];
-const ROCKET_SECONDS = 0.7;
-const fireworkAxis = new THREE.Vector3();
-const rocketAt = new THREE.Vector3();
-const rocketColor = new THREE.Color(0xffd9a0);
-
-function celebrate(shells: number) {
-  const now = performance.now();
-  const pick = () => new THREE.Color(FIREWORK_COLORS[Math.floor(Math.random() * FIREWORK_COLORS.length)]);
-  const kinds: ShellKind[] = ['peony', 'peony', 'ring', 'willow'];
-  for (let i = 0; i < shells; i++) {
-    // a point in the view between the camera and the island; the rocket climbs to it from below
-    const to = new THREE.Vector3();
-    camera.getWorldDirection(to).multiplyScalar(6 + Math.random() * 9).add(camera.position);
-    fireworkAxis.set(1, 0, 0).applyQuaternion(camera.quaternion);
-    to.addScaledVector(fireworkAxis, (Math.random() - 0.5) * 14);
-    to.y += 1 + Math.random() * 5;
-    const from = to.clone();
-    from.y = Math.min(to.y - 6, level.platform.top);
-    from.x += (Math.random() - 0.5) * 2;
-    const kind = kinds[Math.floor(Math.random() * kinds.length)];
-    const colors = kind === 'willow' ? [new THREE.Color(0xffc857)] : [pick(), pick()];
-    rockets.push({ at: now + 150 + i * 170 + Math.random() * 200, from, to, start: null, kind, colors });
-  }
-}
-
-function updateFireworks(now: number) {
-  for (let i = rockets.length - 1; i >= 0; i--) {
-    const r = rockets[i];
-    if (now < r.at) continue;
-    r.start ??= now;
-    const t = Math.min((now - r.start) / (ROCKET_SECONDS * 1000), 1);
-    rocketAt.lerpVectors(r.from, r.to, 1 - (1 - t) ** 2); // slows as it climbs
-    sparks.tail(rocketAt, rocketColor);
-    if (t < 1) continue;
-    rockets.splice(i, 1);
-    glow.emit(r.to, { color: 0xfff1c1, size: [1.2, 5], life: 0.25, alpha: 0.9 });
-    sparks.burst(r.to, r.kind, r.colors, r.kind === 'ring' ? 60 : 150, r.kind === 'willow' ? 6 : 9);
-    if (Math.random() < 0.35) playBoom(); // a few thumps, not every shell
-  }
-}
-
 function finishIfDone() {
   const states = blockStates();
   const friendDown = friendLost(charStates());
@@ -1790,9 +1751,16 @@ function finishIfDone() {
     const saved = recordResult(level.id, score, medal);
     playStinger(medal === 'gold' ? 'gold' : 'win');
     playCrowd('cheer');
-    celebrate(medal === 'gold' ? 40 : 26);
+    fireworks.celebrate(medal === 'gold' ? 40 : 26, level.platform.top);
     const hasNext = levelIndex < levels.length - 1;
-    ui.showResult({ won: true, score, medal, best: saved.best, hasNext, autoNextSeconds: hasNext ? 7 : undefined });
+    ui.showResult({
+      won: true,
+      score,
+      medal,
+      best: saved.best,
+      hasNext,
+      autoNextSeconds: hasNext ? 7 : undefined,
+    });
   } else {
     playStinger('lose');
     playCrowd('aww');
@@ -2015,7 +1983,10 @@ function updateRemoteState() {
   const current = levelIndex >= 0 ? level : null;
   const state: HostMsg = {
     t: 'state',
-    phase: phase === 'menu' || phase === 'title' || phase === 'playing' || phase === 'won' || phase === 'lost' ? phase : 'playing',
+    phase:
+      phase === 'menu' || phase === 'title' || phase === 'playing' || phase === 'won' || phase === 'lost'
+        ? phase
+        : 'playing',
     level: current ? levelIndex : -1,
     name: current?.name ?? '',
     throwsLeft: current ? throwsLeft() : 0,
@@ -2571,7 +2542,10 @@ function updateNearMisses() {
         const now = performance.now();
         if (best < MISS_MIN || best > MISS_MAX || now - (lastQuip.get(c) ?? -1e9) < 2500) continue;
         lastQuip.set(c, now);
-        playVoice(MISS_SOUNDS[Math.floor(Math.random() * MISS_SOUNDS.length)], CHARACTERS[c.kind].voice * (1 + Math.random() * 0.2));
+        playVoice(
+          MISS_SOUNDS[Math.floor(Math.random() * MISS_SOUNDS.length)],
+          CHARACTERS[c.kind].voice * (1 + Math.random() * 0.2),
+        );
         bubbleOver(c, missFor(c.kind));
       }
     }
@@ -2585,7 +2559,10 @@ function hitReaction(c: CharacterEntity) {
   const now = performance.now();
   if (now - (lastQuip.get(c) ?? -1e9) < 2500) return;
   lastQuip.set(c, now);
-  playVoice(HIT_VOICES[Math.floor(Math.random() * HIT_VOICES.length)], CHARACTERS[c.kind].voice * (0.9 + Math.random() * 0.3));
+  playVoice(
+    HIT_VOICES[Math.floor(Math.random() * HIT_VOICES.length)],
+    CHARACTERS[c.kind].voice * (0.9 + Math.random() * 0.3),
+  );
   bubbleOver(c, quipFor(c.kind));
 }
 
@@ -2677,7 +2654,11 @@ function buildCrowd() {
   removeCrowd();
   if (!themeId) return;
   const rand = seeded((Math.random() * 2 ** 31) | 0); // a different crowd every time
-  const palette = crowdKinds(themeId, THEMES[themeId].crowd, level.characters.map((c) => c.kind));
+  const palette = crowdKinds(
+    themeId,
+    THEMES[themeId].crowd,
+    level.characters.map((c) => c.kind),
+  );
   const natives = THEMES[themeId].crowd.filter((k) => palette.includes(k));
   const count = QUALITY_SETTINGS[quality].crowd;
   const shuffle = <T>(list: T[]) =>
@@ -2692,7 +2673,8 @@ function buildCrowd() {
     const pool = rand() < 0.5 && natives.length > 0 ? natives : palette;
     const pick: CharacterKind = pool[Math.floor(rand() * pool.length)];
     // every third spectator on Tiki Isle is a totem, whenever the 5-kind cap leaves room for it
-    const kind: CharacterKind = themeId === 'tiki' && n % 3 === 0 && palette.includes('totem') ? 'totem' : pick;
+    const kind: CharacterKind =
+      themeId === 'tiki' && n % 3 === 0 && palette.includes('totem') ? 'totem' : pick;
     const def = CHARACTERS[kind];
     const rig = new CharacterRig(kind, false, themeId); // no shadows: a crowd of shadow casters costs too much
     rig.danceStyle = Math.floor(rand() * 3);
@@ -2829,7 +2811,8 @@ function updateCrowd(dt: number) {
     if (!s.entity.body.isSleeping() && speedOf(s.entity.body) > 1.5) mood = 'tumble';
     else if (phase === 'won') mood = i % 3 === 0 ? 'cheer' : 'dance';
     else if (phase === 'lost') mood = 'sad';
-    else if (phase === 'title' && now >= crowdCheerUntil) mood = 'dance'; // the title is a party
+    else if (phase === 'title' && now >= crowdCheerUntil)
+      mood = 'dance'; // the title is a party
     else if (now < crowdCheerUntil) mood = i % 4 === 0 ? 'wave' : 'cheer';
     else {
       if (now > s.nextChange) {
@@ -2996,7 +2979,7 @@ function tick(now: number) {
   updateCharacters(dt);
   updateNearMisses();
   updateCrowd(dt);
-  updateFireworks(now);
+  fireworks.updateFireworks(now);
   for (const sail of windmillSails) sail.rotation.z += SAIL_SPEED * dt;
   updateTrails();
   particles.update(fxDt, params.gravity);
