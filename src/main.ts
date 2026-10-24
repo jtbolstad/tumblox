@@ -848,7 +848,7 @@ function loadLevel(index: number) {
         .setActiveEvents(RAPIER.ActiveEvents.COLLISION_EVENTS),
       body,
     );
-    if (def.mobile) body.sleep(); // blocks spawn asleep; attaching the collider woke the body
+    if (def.mobile) pendingSleep.push(body); // blocks spawn asleep (see the end of loadLevel)
     const mesh = meshByType.get(spec.type) as THREE.InstancedMesh;
     const instance = nextInstance.get(spec.type) ?? 0;
     nextInstance.set(spec.type, instance + 1);
@@ -873,9 +873,15 @@ function loadLevel(index: number) {
   }
 
   for (const spec of level.characters) spawnCharacter(spec, top);
-  // everything starts asleep, so the physics loop skips world.step; one step puts the new colliders into the
-  // scene queries, or the laser, hose and grab rays would find nothing until something woke up
+  // everything starts asleep, so the physics loop skips world.step; one tiny step puts the new colliders
+  // into the scene queries (or the laser, hose and grab rays find nothing), and only then do the bodies
+  // go to sleep: a step taken while they were already asleep woke the whole scene
+  const stepDt = world.timestep;
+  world.timestep = 1e-4;
   world.step();
+  world.timestep = stepDt;
+  for (const body of pendingSleep) body.sleep();
+  pendingSleep.length = 0;
 
   frameCamera(true);
   startIntro();
@@ -906,6 +912,9 @@ function getUpIfFallenOver(c: CharacterEntity) {
   c.body.setAngvel(getUpAxis, true);
 }
 
+/** Bodies that should start asleep: put to sleep once the new colliders are in the scene queries. */
+const pendingSleep: RAPIER.RigidBody[] = [];
+
 function spawnCharacter(spec: Level['characters'][number], top: number) {
   const def = CHARACTERS[spec.kind];
   const [w, h, d] = def.size.map((n) => n * spec.scale) as [number, number, number];
@@ -924,7 +933,7 @@ function spawnCharacter(spec: Level['characters'][number], top: number) {
       .setActiveEvents(RAPIER.ActiveEvents.COLLISION_EVENTS),
     body,
   );
-  body.sleep(); // like blocks, characters wait asleep until something hits them
+  pendingSleep.push(body); // like blocks, characters wait asleep until something hits them
   const rig = new CharacterRig(spec.kind, true, level.theme);
   rig.root.scale.setScalar(spec.scale);
   scene.add(rig.root);
