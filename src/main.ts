@@ -23,6 +23,7 @@ import {
 } from './entities';
 import { createFireworks } from './fireworks';
 import { Debris, disposeMesh, makeZoneMesh, Particles, Puffs, Shake, Shockwaves, Sparks } from './fx';
+import { createGemFx } from './gem-fx';
 import { createGrab, WHITE } from './grab';
 import { createHudPanels, QUALITIES, type Quality } from './hud-panels';
 import { startTranslating } from './i18n';
@@ -31,7 +32,7 @@ import { createLevelRuntime } from './level-runtime';
 import { blockTexture } from './marks';
 import { initMusic, setTrack } from './music';
 import { type Party, partyModeFor } from './party';
-import { createPhysicsStep, randomDir } from './physics-step';
+import { createPhysicsStep } from './physics-step';
 import { loadProgress, recordResult } from './progress';
 import { buildProps, disposeGroup, type Solid, type Spot } from './props';
 import { type RemoteHost, startRemoteHost } from './remote';
@@ -95,9 +96,7 @@ const QUALITY_SETTINGS: Record<
   medium: { pixelRatio: 1.5, shadowMap: 1024, extras: true, crowd: 10 },
   high: { pixelRatio: 2, shadowMap: 2048, extras: true, crowd: 16 },
 };
-const SPARKLE_INTERVAL = 0.07; // s between gem glints
 const SQUASH_SECONDS = 0.18;
-const TRAIL_SPEED = 6; // m/s above which balls leave a trail
 const SLOWMO_PUSH = 0.18; // share of the camera distance the view pushes in during slow-mo
 const WIN_ORBIT_SPEED = 0.15; // rad/s while the result screen is up
 
@@ -561,7 +560,7 @@ function clearLevel() {
   }
   blockMeshes.length = 0;
   forgetHighlight();
-  shinyMats.length = 0;
+  gemFx.resetShiny();
   for (const b of balls) removeBallBody(b);
   balls.length = 0;
   for (const c of chars) {
@@ -668,8 +667,8 @@ function loadLevel(index: number) {
       material.emissive.copy(material.color);
       material.emissiveIntensity = 0.15;
     }
-    if (SHINY[type] && material instanceof THREE.MeshStandardMaterial)
-      shinyMats.push({ mat: material, type });
+    if (gemFx.SHINY[type] && material instanceof THREE.MeshStandardMaterial)
+      gemFx.registerShiny(material, type);
     const mesh = new THREE.InstancedMesh(boxGeo, material, count);
     for (let i = 0; i < count; i++) mesh.setColorAt(i, WHITE); // per-block tint, used to mark the grabbed block
     mesh.castShadow = true;
@@ -1347,67 +1346,15 @@ const { launch, flickForTier, applyKeys, updateAimPreview, throwCooldownDone, fo
   });
 
 // ---------- gem glints ----------
-const sparklePos = new THREE.Vector3();
-let sparkleClock = 0;
-
-/** The precious block types: they throb with light and throw off glints, in their own colours. */
-const SHINY: Partial<Record<BlockType, { glint: [number, number]; glow: [number, number] }>> = {
-  gem: { glint: [0xffffff, 0xbfe4ff], glow: [0.3, 0.8] },
-  point: { glint: [0xfff6c9, 0xffe066], glow: [0.1, 0.45] },
-};
-const shinyMats: { mat: THREE.MeshStandardMaterial; type: BlockType }[] = []; // every such material in play
-let gemClock = 0;
-
-/** Gems throb with light and throw off bright glints, so they read as precious at a glance. */
-function sparkleGems(dt: number) {
-  gemClock += dt;
-  const pulse = 0.5 + 0.5 * Math.sin(gemClock * 3.2);
-  for (const { mat, type } of shinyMats) {
-    const shiny = SHINY[type];
-    if (!shiny) continue;
-    mat.emissive.set(BLOCKS[type].color);
-    mat.emissiveIntensity = shiny.glow[0] + pulse * (shiny.glow[1] - shiny.glow[0]);
-  }
-  if (!QUALITY_SETTINGS[quality].extras) return;
-  sparkleClock += dt;
-  if (sparkleClock < SPARKLE_INTERVAL) return;
-  sparkleClock = 0;
-  const gems = blocks.filter((b) => SHINY[b.type] && b.status !== 'removed');
-  if (gems.length === 0) return;
-  const gem = gems[Math.floor(Math.random() * gems.length)];
-  const colors = SHINY[gem.type]?.glint ?? [0xffffff, 0xffffff];
-  sparklePos
-    .set(Math.random() - 0.5, Math.random() - 0.5, Math.random() - 0.5)
-    .multiply(gem.size)
-    .multiplyScalar(1.1)
-    .add(gem.currPos);
-  const big = Math.random() < 0.25; // now and then a big flash
-  glow.emit(sparklePos, {
-    color: colors[Math.random() < 0.5 ? 0 : 1],
-    size: big ? [0.9, 0.05] : [0.5, 0.05],
-    life: big ? 0.7 : 0.5,
-    alpha: 1,
-  });
-}
-
-const trailPos = new THREE.Vector3();
-const trailDir = new THREE.Vector3();
-
-/** White streak behind fast balls and glints off gems that are flying. */
-function updateTrails() {
-  if (!QUALITY_SETTINGS[quality].extras) return;
-  for (const b of balls) {
-    if (speedOf(b.body) < TRAIL_SPEED) continue;
-    const r = TOOLS[b.tool].radius * params.radiusScale;
-    glow.emit(b.mesh.position, { color: 0xffffff, size: [r * 1.6, r * 0.3], life: 0.25, alpha: 0.35 });
-  }
-  for (const g of blocks) {
-    if (g.type !== 'gem' || g.status === 'removed' || g.body.isSleeping()) continue;
-    if (speedOf(g.body) < 3 || Math.random() < 0.5) continue;
-    trailPos.copy(g.currPos).addScaledVector(randomDir(trailDir), 0.5);
-    glow.emit(trailPos, { color: 0xffffff, size: [0.3, 0.05], life: 0.4, alpha: 0.9 });
-  }
-}
+const gemFx = createGemFx({
+  glow,
+  blocks,
+  balls,
+  getExtras: () => QUALITY_SETTINGS[quality].extras,
+  speedOf,
+  getRadiusScale: () => params.radiusScale,
+});
+const { sparkleGems, updateTrails } = gemFx;
 
 // ---------- debug panel (development builds only) ----------
 if (import.meta.env.DEV) await createDebugPanel(world, params);
