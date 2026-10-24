@@ -3,7 +3,7 @@ import '@fontsource-variable/fredoka';
 import Peer from 'peerjs';
 import { startTranslating, tr } from './i18n';
 import { loadBundledLevels } from './level';
-import { aimToScreen, type HostMsg, parseHostMsg, type RemoteMsg, wrapDeg } from './remote-protocol';
+import { type HostMsg, parseHostMsg, type RemoteMsg, wrapDeg } from './remote-protocol';
 import { THEME_IDS, THEMES } from './themes';
 import { chargeTier, type PointerSample, powerTier, releaseVelocity } from './throw';
 import { levelThumb } from './thumb';
@@ -13,7 +13,6 @@ const status = el('status');
 const turnBanner = el('turn-banner');
 const connectBtn = el<HTMLButtonElement>('connect');
 const pad = el('pad');
-const tiltBall = el('tilt-ball');
 const orbitPad = el('orbit-pad');
 const orbitKnob = el('orbit-knob');
 const centerBtn = el('center');
@@ -79,20 +78,12 @@ async function allowMotion(): Promise<boolean> {
   return true;
 }
 
-/** Moves the ball inside the pad so a tilt gives the same feedback the hand holding the phone feels. */
-function updateTiltBall(yaw: number, pitch: number) {
-  const { x, y } = aimToScreen(yaw, pitch, 100, 100);
-  tiltBall.style.left = `${x}%`;
-  tiltBall.style.top = `${y}%`;
-}
-
 function onOrientation(e: DeviceOrientationEvent) {
   if (e.alpha === null || e.beta === null) return;
   latest = { alpha: e.alpha, beta: e.beta };
   base ??= latest;
   const yaw = wrapDeg(latest.alpha - base.alpha);
   const pitch = latest.beta - base.beta;
-  updateTiltBall(yaw, pitch);
   if (!myTurn) return; // a hot-seat party: don't move the aim crosshair on someone else's turn
   const now = performance.now();
   if (now - lastSent < 30) return; // about 30 updates a second is plenty
@@ -145,7 +136,6 @@ connectBtn.addEventListener('click', async () => {
 
 centerBtn.addEventListener('click', () => {
   base = latest; // whatever the phone points at now is "straight ahead"
-  updateTiltBall(0, 0);
 });
 
 // the pad: a finger down, then either a swipe (speed throws) or a held press (hold time charges,
