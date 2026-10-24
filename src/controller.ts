@@ -7,6 +7,7 @@ import { chargeTier, type PointerSample, powerTier, releaseVelocity } from './th
 
 const el = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 const status = el('status');
+const turnBanner = el('turn-banner');
 const connectBtn = el<HTMLButtonElement>('connect');
 const pad = el('pad');
 const centerBtn = el('center');
@@ -27,6 +28,8 @@ const POWER_WORDS = ['Gentle toss', 'Light throw', 'Strong throw', 'Full power!'
 const tierText = (tier: 0 | 1 | 2 | 3) => `${'●'.repeat(tier + 1)}${'○'.repeat(3 - tier)}  ${tr(POWER_WORDS[tier])}`;
 const power = (speed: number) => tierText(powerTier(speed, state?.tiers ?? [1000, 2300, 5400]));
 const MEDAL = { gold: '🥇', silver: '🥈', bronze: '🥉' } as const;
+// one fixed color per hot-seat slot, so whoever's turn it is reads at a glance, before the text does
+const PLAYER_COLORS = ['#fb8500', '#219ebc', '#8ac926', '#e63972'];
 
 // the hash is "<hostId>:<slot>" for a party phone (one per player), or just "<hostId>" for solo play
 const [hostId, slotPart] = location.hash.slice(1).split(':');
@@ -203,13 +206,24 @@ function render() {
   nextBtn.hidden = !(phase === 'won' && state.hasNext);
   myTurn = state.players <= 1 || state.currentPlayer === mySlot;
   pad.classList.toggle('waiting', phase === 'playing' && !myTurn);
-  if (phase === 'playing' && !myTurn) {
-    setStatus(`P${state.currentPlayer + 1}'s turn — wait for yours`);
-  } else if (phase === 'won') setStatus('Level cleared!');
+
+  // a shared phone gets passed around: who it is now is more important than any other status line
+  const showBanner = state.players > 1 && phase === 'playing';
+  turnBanner.hidden = !showBanner;
+  if (showBanner) {
+    turnBanner.classList.toggle('mine', myTurn);
+    turnBanner.classList.toggle('theirs', !myTurn);
+    turnBanner.style.background = PLAYER_COLORS[state.currentPlayer % PLAYER_COLORS.length];
+    turnBanner.textContent = myTurn
+      ? tr(`You are P${mySlot + 1}. Point at the screen.`)
+      : tr(`P${state.currentPlayer + 1}'s turn — wait for yours`);
+  }
+
+  if (phase === 'won') setStatus('Level cleared!');
   else if (phase === 'lost') setStatus('Out of throws');
   else if (phase === 'title' || phase === 'menu') setStatus('Pick a level');
-  else if (state.players > 1) setStatus(`You are P${mySlot + 1}. Point at the screen.`);
-  else setStatus('Connected. Point at the screen.');
+  else if (!showBanner) setStatus('Connected. Point at the screen.');
+  else status.textContent = ''; // the banner above already says whose turn it is
   // the game's own level list is open, or we are on the title: the phone offers the choice too
   if ((phase === 'menu' || phase === 'title') && picker.hidden && levelInfo.length > 0) openPicker();
 }
