@@ -1,6 +1,12 @@
 import Peer, { type DataConnection } from 'peerjs';
 import QRCode from 'qrcode';
-import { type HostMsg, MAX_REMOTE_SLOTS, parseRemoteMsg, type RemoteMsg } from './remote-protocol';
+import {
+  type HostMsg,
+  ICE_SERVERS,
+  MAX_REMOTE_SLOTS,
+  parseRemoteMsg,
+  type RemoteMsg,
+} from './remote-protocol';
 
 export interface RemoteHost {
   /** the address a given player's phone should open (0-based slot) */
@@ -31,7 +37,7 @@ export function startRemoteHost(
   onStatus: (slot: number, s: 'waiting' | 'connected' | 'error') => void,
 ): RemoteHost {
   const id = `tumble-${Math.random().toString(36).slice(2, 8)}`;
-  const peer = new Peer(id);
+  const peer = new Peer(id, { config: { iceServers: ICE_SERVERS } });
   // on localhost a phone cannot reach this page; in dev the server tells us its network address
   const lan = (window as unknown as { __LAN_ORIGIN__?: string }).__LAN_ORIGIN__;
   const local = ['localhost', '127.0.0.1', '[::1]'].includes(location.hostname);

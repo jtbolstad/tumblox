@@ -385,20 +385,26 @@ export function playVoice(line: VoiceLine, pitch: number, delay = 0) {
 
 let lastCrowd = 0;
 
-/** The crowd around the arena: a staggered chorus of "yay" with a smattering of claps, or an "aww". */
-export function playCrowd(kind: 'cheer' | 'aww') {
+/**
+ * The crowd around the arena: a staggered chorus of "yay" with a smattering of claps, or an "aww".
+ * `big` is for clearing a level: more voices and a longer round of applause than a mid-level cheer.
+ */
+export function playCrowd(kind: 'cheer' | 'aww', big = false) {
   const c = out();
   if (!c || !graph || volumes.voices === 0) return;
   const now = performance.now();
-  if (now - lastCrowd < 1500) return; // one reaction at a time, however many things happen
+  if (now - lastCrowd < (big ? 500 : 1500)) return; // one reaction at a time, however many things happen
   lastCrowd = now;
-  for (let i = 0; i < 6; i++) {
-    playVoice(kind === 'cheer' ? 'cheer' : 'sad', 0.8 + Math.random() * 1.1, Math.random() * 0.35);
+  const voices = big ? 11 : 6;
+  for (let i = 0; i < voices; i++) {
+    playVoice(kind === 'cheer' ? 'cheer' : 'sad', 0.8 + Math.random() * 1.1, Math.random() * (big ? 0.7 : 0.35));
   }
   if (kind === 'cheer') {
-    for (let i = 0; i < 16; i++) {
-      hiss(c, graph.buses.voices, c.currentTime + Math.random() * 1.3, {
-        gain: 0.05,
+    const claps = big ? 34 : 16;
+    const spread = big ? 2.4 : 1.3;
+    for (let i = 0; i < claps; i++) {
+      hiss(c, graph.buses.voices, c.currentTime + Math.random() * spread, {
+        gain: big ? 0.065 : 0.05,
         decay: 0.03,
         filter: 'bandpass',
         freq: 1200 + Math.random() * 1500,

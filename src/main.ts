@@ -100,6 +100,7 @@ const QUALITY_SETTINGS: Record<
   { pixelRatio: number; shadowMap: number; extras: boolean; crowd: number }
 > = {
   // extras: rim light and gem sparkles
+  minimal: { pixelRatio: 1, shadowMap: 256, extras: false, crowd: 0 },
   low: { pixelRatio: 1, shadowMap: 512, extras: false, crowd: 6 },
   medium: { pixelRatio: 1.5, shadowMap: 1024, extras: true, crowd: 10 },
   high: { pixelRatio: 2, shadowMap: 2048, extras: true, crowd: 16 },
@@ -161,6 +162,49 @@ const {
   updateIntro,
   isOrbitMode,
 } = cam;
+
+// ---------- touch joystick: drags the camera around, same math as the phone remote's orbit knob ----------
+{
+  const pad = document.getElementById('orbit-joystick') as HTMLDivElement;
+  const knob = document.getElementById('orbit-joystick-knob') as HTMLDivElement;
+  const RADIUS = 30; // px the knob can travel from centre, also how far a finger must drag for full speed
+  let dx = 0;
+  let dy = 0;
+  let sendTimer: ReturnType<typeof setInterval> | undefined;
+  function update(ev: PointerEvent) {
+    const rect = pad.getBoundingClientRect();
+    const rawX = (ev.clientX - (rect.left + rect.width / 2)) / RADIUS;
+    const rawY = (ev.clientY - (rect.top + rect.height / 2)) / RADIUS;
+    const len = Math.hypot(rawX, rawY) || 1;
+    const clamp = Math.min(1, len);
+    dx = (rawX / len) * clamp;
+    dy = (rawY / len) * clamp;
+    knob.style.transform = `translate(${dx * RADIUS}px, ${dy * RADIUS}px)`;
+  }
+  function release() {
+    clearInterval(sendTimer);
+    sendTimer = undefined;
+    dx = 0;
+    dy = 0;
+    knob.style.transform = '';
+  }
+  pad.addEventListener('pointerdown', (ev) => {
+    pad.setPointerCapture(ev.pointerId);
+    update(ev);
+    clearInterval(sendTimer);
+    sendTimer = setInterval(() => {
+      if (dx !== 0 || dy !== 0) {
+        orbitCamera(dx * ORBIT_YAW_SPEED, 1, dy * ORBIT_TILT_SPEED);
+        controls.update();
+      }
+    }, 33);
+  });
+  pad.addEventListener('pointermove', (ev) => {
+    if (pad.hasPointerCapture(ev.pointerId)) update(ev);
+  });
+  pad.addEventListener('pointerup', release);
+  pad.addEventListener('pointercancel', release);
+}
 
 const { sun, rim, hemi } = addLights(scene); // sun is the one shadow light
 
@@ -891,7 +935,7 @@ function finishIfDone() {
     const medal = medalFor(score, level.medals);
     const saved = recordResult(level.id, score, medal);
     playStinger(medal === 'gold' ? 'gold' : 'win');
-    playCrowd('cheer');
+    playCrowd('cheer', true);
     fireworks.celebrate(medal === 'gold' ? 40 : 26, level.platform.top);
     const hasNext = levelIndex < levels.length - 1;
     ui.showResult({
@@ -981,6 +1025,7 @@ function remoteCommand(m: RemoteMsg & { t: 'cmd' | 'select' }) {
   if (m.cmd === 'retry') restart();
   else if (m.cmd === 'next') startSolo(Math.min(levelIndex + 1, levels.length - 1));
   else if (m.cmd === 'menu') openMenu();
+  else if (m.cmd === 'quality') cycleQuality();
   else showTitle();
 }
 
@@ -1011,6 +1056,7 @@ function updateRemoteState() {
     ],
     players: activeSlotCount(),
     currentPlayer: activeRemoteSlot(),
+    quality,
   };
   const key = JSON.stringify(state);
   if (key !== remoteSent) {
@@ -1123,13 +1169,25 @@ remotePanel.addEventListener('click', (ev) => ev.stopPropagation());
 // no keyboard/mouse on a TV: the QR goes up by itself, instead of waiting for a tap on remoteBtn
 if (isTv) openRemotePanel();
 
-createHudPanels({
+const hudPanels = createHudPanels({
   getQuality: () => quality,
   setQuality: (q) => {
     quality = q;
   },
   applyQuality,
 });
+
+/** Cycles quality the same way the HUD button does; also reachable from the phone remote. */
+function cycleQuality() {
+  quality = QUALITIES[(QUALITIES.indexOf(quality) + 1) % QUALITIES.length];
+  try {
+    localStorage.setItem('blox.quality.v1', quality);
+  } catch {
+    // storage blocked: the choice just is not remembered
+  }
+  applyQuality();
+  hudPanels.refreshQuality();
+}
 
 // ---------- aim visuals, the grab tool, and the throw input (see aim-input.ts and grab.ts) ----------
 const aimVisuals = createAimVisuals(scene);

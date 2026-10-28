@@ -4,8 +4,15 @@ import Peer from 'peerjs';
 import { loadBundledLevels } from './data/level';
 import { THEME_IDS, THEMES } from './data/themes';
 import { chargeTier, type PointerSample, powerTier, releaseVelocity } from './input/throw';
-import { type HostMsg, parseHostMsg, type RemoteMsg, wrapDeg } from './remote/remote-protocol';
-import { levelThumb } from './render/thumb';
+import {
+  type HostMsg,
+  ICE_SERVERS,
+  parseHostMsg,
+  type RemoteCommand,
+  type RemoteMsg,
+  wrapDeg,
+} from './remote/remote-protocol';
+import { levelPreviewImg } from './render/level-preview';
 import { startTranslating, tr } from './ui/i18n';
 
 const el = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
@@ -22,6 +29,7 @@ const levelName = el('level-name');
 const throwsBox = el('throws');
 const buttons = el('buttons');
 const nextBtn = el<HTMLButtonElement>('next-btn');
+const qualityBtn = el<HTMLButtonElement>('quality-btn');
 const picker = el('picker');
 const levelList = el('level-list');
 
@@ -103,7 +111,7 @@ connectBtn.addEventListener('click', async () => {
   addEventListener('deviceorientation', onOrientation);
   setStatus('Connecting…');
   connectBtn.disabled = true;
-  const peer = new Peer();
+  const peer = new Peer({ config: { iceServers: ICE_SERVERS } });
   peer.on('open', () => {
     conn = peer.connect(hostId, { serialization: 'json' });
     conn.on('data', (data) => {
@@ -181,7 +189,7 @@ pad.addEventListener('pointerup', lift);
 pad.addEventListener('pointercancel', lift);
 
 // the knob: drags off-centre to rotate/tilt the camera, independent of the tilt sensor that aims
-const ORBIT_RADIUS = 30; // px the knob can travel from centre, also how far a finger must drag for full speed
+const ORBIT_RADIUS = 34; // px the knob can travel from centre, also how far a finger must drag for full speed
 let orbitDx = 0;
 let orbitDy = 0;
 let orbitSendTimer: ReturnType<typeof setInterval> | undefined;
@@ -227,12 +235,13 @@ orbitPad.addEventListener('pointercancel', (ev) => {
 });
 
 // buttons: the same actions as the game's own screens
-function sendCmd(cmd: 'retry' | 'next' | 'menu' | 'title') {
+function sendCmd(cmd: RemoteCommand) {
   send({ t: 'cmd', cmd });
   navigator.vibrate?.(15);
 }
 el('retry-btn').addEventListener('click', () => sendCmd('retry'));
 nextBtn.addEventListener('click', () => sendCmd('next'));
+qualityBtn.addEventListener('click', () => sendCmd('quality'));
 el('levels-btn').addEventListener('click', () => openPicker());
 el('picker-close').addEventListener('click', () => closePicker());
 
@@ -261,7 +270,7 @@ function openPicker() {
         isle.className = state?.level === i ? 'isle current' : 'isle';
         const bundled = bundledLevels[i];
         isle.append(
-          ...(bundled ? [levelThumb(bundled)] : []),
+          ...(bundled ? [levelPreviewImg(bundled)] : []),
           Object.assign(document.createElement('span'), { className: 'n', textContent: String(i + 1) }),
           Object.assign(document.createElement('span'), { className: 'name', textContent: tr(l.name) }),
           Object.assign(document.createElement('span'), {
@@ -293,6 +302,7 @@ function render() {
   throwsBox.textContent = phase === 'playing' ? `${tr('Throws')}: ${state.throwsLeft}` : '';
   el('retry-btn').hidden = phase === 'title' || phase === 'menu';
   nextBtn.hidden = !(phase === 'won' && state.hasNext);
+  qualityBtn.textContent = `🎚 ${state.quality[0].toUpperCase()}${state.quality.slice(1)}`;
   myTurn = state.players <= 1 || state.currentPlayer === mySlot;
   pad.classList.toggle('waiting', phase === 'playing' && !myTurn);
 

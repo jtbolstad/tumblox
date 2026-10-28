@@ -1,7 +1,7 @@
 import { type Channel, getVolume, isMuted, setMuted, setVolume, unlockAudio } from '../audio/audio';
 import { lang, setLang } from './i18n';
 
-export const QUALITIES = ['low', 'medium', 'high'] as const;
+export const QUALITIES = ['minimal', 'low', 'medium', 'high'] as const;
 export type Quality = (typeof QUALITIES)[number];
 
 /**
@@ -73,4 +73,6 @@ export function createHudPanels(deps: {
     applyQuality();
     showQuality();
   });
+
+  return { refreshQuality: showQuality };
 }

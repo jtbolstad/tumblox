@@ -16,8 +16,12 @@ export type RemoteMsg =
 /** Phones can connect as any of these player slots; a hot-seat party has at most this many. */
 export const MAX_REMOTE_SLOTS = 4;
 
-export const REMOTE_COMMANDS = ['retry', 'next', 'menu', 'title'] as const;
+export const REMOTE_COMMANDS = ['retry', 'next', 'menu', 'title', 'quality'] as const;
 export type RemoteCommand = (typeof REMOTE_COMMANDS)[number];
+
+/** Mirrors `Quality` from `ui/hud-panels`, repeated here so this module stays independent of the UI. */
+export const QUALITY_LEVELS = ['minimal', 'low', 'medium', 'high'] as const;
+export type QualityLevel = (typeof QUALITY_LEVELS)[number];
 
 /** What the game tells the phone, so its buttons match what is on the big screen. */
 export type HostMsg =
@@ -34,6 +38,7 @@ export type HostMsg =
       /** hot-seat party: how many players and whose turn it is (0-based); solo play is 1 and 0 */
       players: number;
       currentPlayer: number;
+      quality: QualityLevel;
     }
   | { t: 'levels'; levels: { name: string; theme: string; medal: 'gold' | 'silver' | 'bronze' | null }[] };
 
@@ -46,6 +51,24 @@ export const REMOTE_SPEED_SCALE = 1.3;
 /** rad of camera turn/tilt per 'orbit' message at full joystick deflection (sent ~30 times a second). */
 export const ORBIT_YAW_SPEED = 0.045;
 export const ORBIT_TILT_SPEED = 0.025;
+
+/**
+ * WebRTC ICE servers for both ends of the remote link. Google's STUN server is enough when both
+ * devices can reach each other directly; phone-on-cellular + computer-behind-a-strict-NAT/firewall
+ * often can't, so a TURN relay is also offered as a fallback (Open Relay Project's free, public,
+ * rate-limited test credentials - fine for a casual feature like this, not for heavy production use).
+ */
+export const ICE_SERVERS: RTCIceServer[] = [
+  { urls: 'stun:stun.l.google.com:19302' },
+  { urls: 'stun:openrelay.metered.ca:80' },
+  { urls: 'turn:openrelay.metered.ca:80', username: 'openrelayproject', credential: 'openrelayproject' },
+  { urls: 'turn:openrelay.metered.ca:443', username: 'openrelayproject', credential: 'openrelayproject' },
+  {
+    urls: 'turn:openrelay.metered.ca:443?transport=tcp',
+    username: 'openrelayproject',
+    credential: 'openrelayproject',
+  },
+];
 
 /** An angle in degrees folded into (-180, 180]. */
 export function wrapDeg(d: number): number {
@@ -133,6 +156,7 @@ export function parseHostMsg(data: unknown): HostMsg | null {
           : [1000, 2300, 5400],
       players: typeof m.players === 'number' ? m.players : 1,
       currentPlayer: typeof m.currentPlayer === 'number' ? m.currentPlayer : 0,
+      quality: (QUALITY_LEVELS as readonly unknown[]).includes(m.quality) ? (m.quality as QualityLevel) : 'high',
     };
   }
   if (m.t === 'levels' && Array.isArray(m.levels)) {

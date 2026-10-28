@@ -24,6 +24,12 @@
       #orbit-btn { display: none; }
       @media (pointer: coarse) { #orbit-btn { display: inline-block; } }
       #orbit-btn[aria-pressed="true"] { outline: 3px solid var(--accent); outline-offset: -3px; }
+      /* a touch-only joystick that orbits the camera, independent of the one-finger-orbit toggle */
+      #orbit-joystick { display: none; position: fixed; top: 58px; right: 10px; width: 92px; height: 92px; border-radius: 50%; background: rgba(2, 48, 71, 0.3); border: 2px solid rgba(255, 255, 255, 0.55); touch-action: none; z-index: 4; }
+      @media (pointer: coarse) { #orbit-joystick { display: block; } }
+      #orbit-joystick::after { content: '🔄'; position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font-size: 1.1em; opacity: 0.4; pointer-events: none; }
+      #orbit-joystick-knob { position: absolute; left: 50%; top: 50%; width: 38px; height: 38px; margin: -19px 0 0 -19px; border-radius: 50%; background: rgba(255, 255, 255, 0.92); box-shadow: 0 3px 0 rgba(2, 48, 71, 0.4); }
+      body.on-title #orbit-joystick, body.capture #orbit-joystick { display: none; }
       #hud > span:not(:empty) { background: rgba(255, 255, 255, 0.78); border-radius: 8px; padding: 3px 9px; } /* readable on dark night skies */
       #hud .goal { opacity: 0.8; }
       #hud .debug { display: none; font-weight: 400; opacity: 0.7; font-size: 0.85em; }
@@ -36,6 +42,8 @@
       #menu .panel { position: relative; }
       #menu-close { position: sticky; float: right; top: 0; z-index: 2; width: 40px; height: 40px; padding: 0; font-size: 1.2em; line-height: 1; border-radius: 50%; }
       .isle .thumb { width: 100%; height: auto; aspect-ratio: 120 / 76; border-radius: 10px; display: block; margin-bottom: 4px; }
+      .isle .thumb.live-thumb { position: relative; overflow: hidden; background: #0e3a50; }
+      .isle .thumb.live-thumb canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
       #menu .panel { max-width: min(1180px, 100%); scrollbar-width: thin; }
       .worlds { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 520px), 1fr)); gap: 12px; text-align: left; align-items: start; }
       .world { border-radius: 14px; padding: 12px 14px 18px; background: linear-gradient(to bottom, var(--sky-top), var(--sky-horizon)); }
@@ -136,6 +144,7 @@
   <body>
     <canvas id="c"></canvas>
     <div id="grit"></div>
+    <div id="orbit-joystick" aria-hidden="true"><div id="orbit-joystick-knob"></div></div>
     <div id="hud">
       <button type="button" id="menu-btn" class="secondary">Levels</button>
       <button type="button" id="mute-btn" class="secondary" aria-label="Toggle sound">🔊</button>
