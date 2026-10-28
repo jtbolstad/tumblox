@@ -21,7 +21,7 @@ function levelPreview(level: Level): HTMLElement {
   const el = document.createElement('div');
   el.className = 'thumb live-thumb';
   import('../render/live-thumb').then(({ mountLiveThumb }) => {
-    previewCleanups.push(mountLiveThumb(el, level, () => el.replaceWith(levelPreviewImg(level))));
+    previewCleanups.push(mountLiveThumb(el, level));
   });
   return el;
 }
