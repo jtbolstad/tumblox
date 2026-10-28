@@ -82,8 +82,6 @@ const NB: Record<string, string> = {
   'Number of players': 'Antall spillere',
   'Title screen': 'Tittelskjerm',
   About: 'Om',
-  'Throw, blast and pull blocks until the island tumbles.':
-    'Kast, sprengt og trekk blokker til øya raser sammen.',
   Play: 'Spill',
   'Go on, throw something at the title.': 'Kom igjen, kast noe på tittelen.',
   Result: 'Resultat',
