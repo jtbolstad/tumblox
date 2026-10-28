@@ -86,6 +86,17 @@ async function allowMotion(): Promise<boolean> {
   return true;
 }
 
+// past this much tilt, aim is already pinned to the screen edge - turning further keeps turning the
+// camera instead, the way physically swinging past where you can still see would in real life
+const TILT_ORBIT_START = 50; // deg
+const TILT_ORBIT_RANGE = 40; // deg of further tilt to reach full turn speed
+
+/** 0 below the threshold, ramping to ±1 over the next `TILT_ORBIT_RANGE` degrees, same sign as `angle`. */
+function tiltOrbitExcess(angle: number) {
+  const over = Math.abs(angle) - TILT_ORBIT_START;
+  return over <= 0 ? 0 : Math.sign(angle) * Math.min(over / TILT_ORBIT_RANGE, 1);
+}
+
 function onOrientation(e: DeviceOrientationEvent) {
   if (e.alpha === null || e.beta === null) return;
   latest = { alpha: e.alpha, beta: e.beta };
@@ -97,6 +108,9 @@ function onOrientation(e: DeviceOrientationEvent) {
   if (now - lastSent < 30) return; // about 30 updates a second is plenty
   lastSent = now;
   send({ t: 'aim', yaw, pitch });
+  const dx = tiltOrbitExcess(yaw);
+  const dy = tiltOrbitExcess(pitch);
+  if (dx !== 0 || dy !== 0) send({ t: 'orbit', dx, dy });
 }
 
 connectBtn.addEventListener('click', async () => {
