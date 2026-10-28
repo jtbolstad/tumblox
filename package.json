@@ -13,6 +13,7 @@
     "lint": "biome check .",
     "lint:fix": "biome check --write .",
     "shots": "node scripts/shots.mjs",
+    "thumbs": "node scripts/thumbs.mjs",
     "brand": "node scripts/brand.mjs",
     "hero": "node scripts/hero.mjs"
   },

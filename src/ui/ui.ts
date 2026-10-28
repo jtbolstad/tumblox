@@ -4,7 +4,33 @@ import type { LevelProgress } from '../data/progress';
 import type { Medal } from '../data/rules';
 import { THEME_IDS, THEMES } from '../data/themes';
 import { TOOLS } from '../data/tools';
-import { levelThumb } from '../render/thumb';
+import { levelPreviewImg } from '../render/level-preview';
+import { isTv } from './device';
+
+/** A phone or a TV remote has no spare GPU headroom for several live 3D views at once; a mouse-driven desktop does. */
+const LIVE_PREVIEW = !isTv && !matchMedia('(pointer: coarse)').matches;
+let previewCleanups: Array<() => void> = [];
+
+/**
+ * A level preview for a menu tile: on desktop, a small live-rotating 3D render of the level's blocks
+ * (loaded lazily, so a TV or phone browsing this same menu never fetches that code); elsewhere, a
+ * pre-rendered screenshot of the real scene.
+ */
+function levelPreview(level: Level): HTMLElement {
+  if (!LIVE_PREVIEW) return levelPreviewImg(level);
+  const el = document.createElement('div');
+  el.className = 'thumb live-thumb';
+  import('../render/live-thumb').then(({ mountLiveThumb }) => {
+    previewCleanups.push(mountLiveThumb(el, level, () => el.replaceWith(levelPreviewImg(level))));
+  });
+  return el;
+}
+
+/** Call before rebuilding the level grid, so any live previews on the old tiles stop rendering. */
+function disposeLevelPreviews() {
+  for (const fn of previewCleanups) fn();
+  previewCleanups = [];
+}
 import type { Brief } from './brief';
 
 function el<T extends HTMLElement>(id: string): T {
@@ -126,6 +152,7 @@ export function createUi(handlers: UiHandlers) {
 
   function renderMenu() {
     if (!shown) return;
+    disposeLevelPreviews();
     const { levels, progress } = shown;
     playerRow.replaceChildren(
       ...Array.from({ length: MAX_PLAYERS }, (_, k) => {
@@ -176,7 +203,7 @@ export function createUi(handlers: UiHandlers) {
           isle.className = 'isle';
           const m = Object.assign(document.createElement('span'), { className: 'm' });
           isle.append(
-            levelThumb(level),
+            levelPreview(level),
             Object.assign(document.createElement('span'), { className: 'n', textContent: String(i + 1) }),
             Object.assign(document.createElement('span'), { className: 'name', textContent: level.name }),
             m,
